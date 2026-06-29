@@ -1,36 +1,15 @@
-const SVG_NS = "http://www.w3.org/2000/svg";
 const BOARD_SIZE = 640;
 
 const board = document.querySelector("#writingBoard");
-const traceLayer = document.querySelector("#traceLayer");
-const questionInput = document.querySelector("#questionInput");
-const loadBtn = document.querySelector("#loadBtn");
-const voiceBtn = document.querySelector("#voiceBtn");
-const replayBtn = document.querySelector("#replayBtn");
-const clearBtn = document.querySelector("#clearBtn");
-const finishPanel = document.querySelector("#finishPanel");
-const restartBtn = document.querySelector("#restartBtn");
+const playPauseBtn = document.querySelector("#playPauseBtn");
+const speakBtn = document.querySelector("#speakBtn");
+const micBtn = document.querySelector("#micBtn");
+const micLabel = micBtn.querySelector(".mic-label");
 
-const CHARACTERS = {
-  山: { char: "山", pinyin: "shān", meaning: "高山、山坡的山" },
-  城: { char: "城", pinyin: "chéng", meaning: "城市、城墙的城" },
-  夏: { char: "夏", pinyin: "xià", meaning: "夏天、夏季的夏" },
-  天: { char: "天", pinyin: "tiān", meaning: "天空、夏天的天" },
-};
-
-let currentData = CHARACTERS["城"];
 let writer = null;
-let isDemoPlaying = false;
-let isDrawing = false;
-let tracePoints = [];
-let tracePath = null;
-let lastSpoken = "";
-
-function createSvgElement(tag, attrs = {}) {
-  const element = document.createElementNS(SVG_NS, tag);
-  Object.entries(attrs).forEach(([key, value]) => element.setAttribute(key, value));
-  return element;
-}
+let currentChar = "";
+// idle: 还没字 / animating: 正在演示 / paused: 演示中暂停 / done: 整字已留在格子里
+let demoState = "idle";
 
 function extractTargetCharacter(text) {
   const cleanText = text.trim();
@@ -41,36 +20,13 @@ function extractTargetCharacter(text) {
   if (directMatch) return directMatch[1];
 
   const chineseChars = [...cleanText].filter((char) => /\p{Script=Han}/u.test(char));
-  return chineseChars[0] || "城";
-}
-
-function setCharacterInfo(data) {
-  document.title = `${data.char}怎么写`;
+  return chineseChars[0] || "";
 }
 
 function loadCharacter(char) {
-  const data = CHARACTERS[char];
-  clearTrace();
-  finishPanel.hidden = true;
-
-  if (!data) {
-    const unknown = { char, pinyin: "待接入", meaning: "这个字还没有动画数据" };
-    setCharacterInfo(unknown);
-    questionInput.value = `还没有“${char}”的动画数据`;
-    return;
-  }
-
-  currentData = data;
-  setCharacterInfo(data);
-  createWriter(data.char);
-  playWritingDemo();
-}
-
-function createWriter(char) {
-  if (!window.HanziWriter) {
-    questionInput.value = "写字动画库没有加载成功";
-    return;
-  }
+  if (!char || !window.HanziWriter) return;
+  currentChar = char;
+  document.title = `${char} · 跟我写`;
 
   removeWriterLayers();
   writer = HanziWriter.create("writingBoard", char, {
@@ -81,92 +37,75 @@ function createWriter(char) {
     showOutline: true,
     strokeColor: "#243241",
     outlineColor: "rgba(36, 50, 65, 0.16)",
-    drawingColor: "#2563eb",
     strokeAnimationSpeed: 0.38,
     delayBetweenStrokes: 850,
     radicalColor: "#243241",
+    onLoadCharDataError: () => {
+      demoState = "idle";
+      currentChar = "";
+      setPlayGlyph("play");
+      speakOnce("这个字还没找到，换一个吧。");
+    },
   });
-  board.appendChild(traceLayer);
+
+  speakOnce(char);
+  playDemo();
 }
 
 function removeWriterLayers() {
-  [...board.querySelectorAll("g")].forEach((group) => {
-    if (group.id !== "traceLayer") group.remove();
+  [...board.querySelectorAll("g")].forEach((group) => group.remove());
+}
+
+async function playDemo() {
+  if (!writer) return;
+  demoState = "animating";
+  setPlayGlyph("pause");
+  await writer.hideCharacter({ duration: 0 });
+  await writer.animateCharacter({
+    onComplete: () => {
+      // 演示完整字留在格子里供照抄
+      demoState = "done";
+      setPlayGlyph("play");
+    },
   });
 }
 
-async function playWritingDemo() {
-  if (!writer || isDemoPlaying) return;
-  isDemoPlaying = true;
-  loadBtn.disabled = true;
-  replayBtn.disabled = true;
-  clearBtn.disabled = true;
-  clearTrace();
-  speakOnce(`看${currentData.char}怎么写。`);
-
-  await writer.hideCharacter({ duration: 0 });
-  await writer.animateCharacter();
-
-  isDemoPlaying = false;
-  loadBtn.disabled = false;
-  replayBtn.disabled = false;
-  clearBtn.disabled = false;
+function togglePlayPause() {
+  if (!writer) return;
+  if (demoState === "animating") {
+    writer.pauseAnimation();
+    demoState = "paused";
+    setPlayGlyph("play");
+  } else if (demoState === "paused") {
+    writer.resumeAnimation();
+    demoState = "animating";
+    setPlayGlyph("pause");
+  } else {
+    // idle / done -> 从头重放
+    playDemo();
+  }
 }
 
-function boardPoint(event) {
-  const rect = board.getBoundingClientRect();
-  const scaleX = BOARD_SIZE / rect.width;
-  const scaleY = BOARD_SIZE / rect.height;
-  return {
-    x: (event.clientX - rect.left) * scaleX,
-    y: (event.clientY - rect.top) * scaleY,
-  };
+function setPlayGlyph(mode) {
+  playPauseBtn.classList.toggle("is-pause", mode === "pause");
+  playPauseBtn.setAttribute("aria-label", mode === "pause" ? "暂停笔顺" : "播放笔顺");
+  playPauseBtn.title = mode === "pause" ? "暂停笔顺" : "播放笔顺";
 }
 
-function beginTrace(event) {
-  if (!currentData || isDemoPlaying) return;
-  finishPanel.hidden = true;
-  isDrawing = true;
-  tracePoints = [boardPoint(event)];
-  tracePath = createSvgElement("path", { class: "trace-line" });
-  traceLayer.appendChild(tracePath);
-  board.setPointerCapture(event.pointerId);
-  event.preventDefault();
-}
-
-function moveTrace(event) {
-  if (!isDrawing) return;
-  tracePoints.push(boardPoint(event));
-  tracePath.setAttribute("d", pointsToPath(tracePoints));
-  event.preventDefault();
-}
-
-function endTrace(event) {
-  if (!isDrawing) return;
-  isDrawing = false;
-  board.releasePointerCapture(event.pointerId);
-}
-
-function clearTrace() {
-  traceLayer.replaceChildren();
-  tracePoints = [];
-  tracePath = null;
-}
-
-function pointsToPath(points) {
-  if (!points.length) return "";
-  return points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x} ${point.y}`).join(" ");
-}
-
-function resetPractice() {
-  clearTrace();
+function speakOnce(text) {
+  if (!("speechSynthesis" in window) || !text) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "zh-CN";
+  utterance.rate = 0.9;
+  window.speechSynthesis.speak(utterance);
 }
 
 function setupVoiceInput() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
-    voiceBtn.disabled = true;
-    voiceBtn.title = "当前浏览器不支持语音输入";
+    micBtn.disabled = true;
+    micLabel.textContent = "这个浏览器不支持语音";
     return;
   }
 
@@ -175,40 +114,52 @@ function setupVoiceInput() {
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
 
-  voiceBtn.addEventListener("click", () => {
-    recognition.start();
-  });
+  let holding = false;
+
+  const startListening = (event) => {
+    event.preventDefault();
+    if (holding) return;
+    holding = true;
+    micBtn.classList.add("is-listening");
+    micLabel.textContent = "在听…";
+    try {
+      recognition.start();
+    } catch {
+      // start() 在上一次还没结束时会抛，忽略即可
+    }
+  };
+
+  const stopListening = () => {
+    if (!holding) return;
+    holding = false;
+    micBtn.classList.remove("is-listening");
+    micLabel.textContent = "按住说要写的字";
+    recognition.stop();
+  };
+
+  micBtn.addEventListener("pointerdown", startListening);
+  micBtn.addEventListener("pointerup", stopListening);
+  micBtn.addEventListener("pointercancel", stopListening);
+  micBtn.addEventListener("pointerleave", stopListening);
 
   recognition.addEventListener("result", (event) => {
     const text = event.results[0][0].transcript;
-    questionInput.value = text;
-    loadCharacter(extractTargetCharacter(text));
+    const char = extractTargetCharacter(text);
+    if (char) {
+      loadCharacter(char);
+    } else {
+      speakOnce("没听清要写哪个字，再说一遍吧。");
+    }
   });
 
   recognition.addEventListener("error", () => {
-    questionInput.value = "没有听清楚，可以再说一次";
+    micBtn.classList.remove("is-listening");
+    micLabel.textContent = "按住说要写的字";
+    holding = false;
   });
 }
 
-function speakOnce(text) {
-  if (!("speechSynthesis" in window) || text === lastSpoken) return;
-  lastSpoken = text;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "zh-CN";
-  utterance.rate = 0.9;
-  window.speechSynthesis.speak(utterance);
-}
-
-loadBtn.addEventListener("click", () => loadCharacter(extractTargetCharacter(questionInput.value)));
-replayBtn.addEventListener("click", playWritingDemo);
-clearBtn.addEventListener("click", resetPractice);
-restartBtn.addEventListener("click", playWritingDemo);
-board.addEventListener("pointerdown", beginTrace);
-board.addEventListener("pointermove", moveTrace);
-board.addEventListener("pointerup", endTrace);
-board.addEventListener("pointercancel", endTrace);
+playPauseBtn.addEventListener("click", togglePlayPause);
+speakBtn.addEventListener("click", () => speakOnce(currentChar || ""));
 
 setupVoiceInput();
-createWriter(currentData.char);
-playWritingDemo();

@@ -2,10 +2,9 @@
   color-scheme: light;
   --ink: #18202b;
   --muted: #687386;
-  --line: #d8e1ec;
-  --paper: #fffaf0;
   --accent: #157a6e;
-  --trace: #2563eb;
+  --listen: #e2562f;
+  --paper: #fffaf0;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
@@ -23,21 +22,12 @@ body {
   background: linear-gradient(135deg, #f5f8fb 0%, #eef5f4 52%, #faf5ec 100%);
 }
 
-button,
-input {
-  font: inherit;
-}
-
 button {
-  min-height: 44px;
+  font: inherit;
   border: 0;
-  border-radius: 8px;
-  padding: 0 18px;
+  cursor: pointer;
   color: #fff;
   background: var(--accent);
-  box-shadow: 0 8px 18px rgb(21 122 110 / 0.16);
-  cursor: pointer;
-  white-space: nowrap;
 }
 
 button:disabled {
@@ -48,121 +38,39 @@ button:disabled {
 .app {
   display: grid;
   height: 100vh;
-  padding: 14px;
+  padding: 16px;
 }
 
 .workbench {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  width: min(1080px, 100%);
-  min-width: 0;
+  gap: 16px;
+  width: min(900px, 100%);
   margin: 0 auto;
-  border: 1px solid rgb(255 255 255 / 0.8);
-  border-radius: 18px;
-  padding: 14px;
-  background: rgb(255 255 255 / 0.78);
+  border-radius: 22px;
+  padding: 18px;
+  background: rgb(255 255 255 / 0.8);
   box-shadow: 0 24px 70px rgb(37 52 74 / 0.13);
 }
 
-.topbar,
-.ask-row,
-.controls {
-  display: flex;
-  align-items: center;
-}
-
-.topbar {
-  gap: 10px;
-}
-
-.ask-row {
-  flex: 1;
-  gap: 10px;
-  border: 1px solid #dde5ef;
-  border-radius: 12px;
-  padding: 8px;
-  background: #fff;
-}
-
-.ask-row input {
-  width: 100%;
-  min-height: 44px;
-  border: 0;
-  border-radius: 8px;
-  padding: 0 14px;
-  background: #f7f9fc;
-  font-size: 17px;
-}
-
-.ask-row button {
-  min-width: 104px;
-}
-
-.icon-button {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 52px;
-  min-width: 52px;
-  padding: 0;
-  background: #253142;
-  box-shadow: 0 10px 22px rgb(37 49 66 / 0.18);
-}
-
-.mic-icon {
-  position: relative;
-  width: 16px;
-  height: 24px;
-  border: 3px solid #fff;
-  border-radius: 10px;
-}
-
-.mic-icon::before {
-  position: absolute;
-  top: 23px;
-  left: 50%;
-  width: 22px;
-  height: 12px;
-  border-right: 3px solid #fff;
-  border-bottom: 3px solid #fff;
-  border-left: 3px solid #fff;
-  border-radius: 0 0 14px 14px;
-  content: "";
-  transform: translateX(-50%);
-}
-
-.mic-icon::after {
-  position: absolute;
-  top: 34px;
-  left: 50%;
-  width: 18px;
-  height: 3px;
-  background: #fff;
-  border-radius: 3px;
-  content: "";
-  transform: translateX(-50%);
-}
-
+/* 输出区:字帖 + 看/听控件 */
 .practice-shell {
   position: relative;
   display: grid;
   place-items: center;
   flex: 1;
   min-height: 0;
-  height: calc(100vh - 144px);
-  border: 1px solid transparent;
   border-radius: 18px;
   background:
     linear-gradient(#fff, #fff) padding-box,
     linear-gradient(135deg, rgb(21 122 110 / 0.34), rgb(226 86 47 / 0.26)) border-box;
+  border: 1px solid transparent;
 }
 
 #writingBoard {
-  width: min(70vh, 90vw, 700px);
+  width: min(64vh, 86vw, 640px);
   aspect-ratio: 1;
   overflow: visible;
-  touch-action: none;
   user-select: none;
 }
 
@@ -184,60 +92,172 @@ button:disabled {
   stroke-width: 1.8;
 }
 
-.trace-line {
-  fill: none;
-  stroke: var(--trace);
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 18;
-  opacity: 0.64;
-}
-
-.controls {
-  justify-content: center;
-  gap: 12px;
-}
-
-.secondary {
-  color: var(--ink);
-  background: #e9eef5;
-  box-shadow: none;
-}
-
-.tip-card,
-.word-bank {
-  display: none;
-}
-
-.finish-panel {
+.board-controls {
   position: absolute;
-  inset: auto 24px 24px;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 4px 12px;
-  align-items: center;
-  border: 1px solid #b7d7cf;
-  border-radius: 12px;
-  padding: 14px;
-  background: rgb(255 255 255 / 0.96);
-  box-shadow: 0 12px 30px rgb(31 41 51 / 0.12);
+  bottom: 18px;
+  left: 50%;
+  display: flex;
+  gap: 18px;
+  transform: translateX(-50%);
 }
 
-.finish-panel[hidden] {
+.round-button {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #253142;
+  box-shadow: 0 10px 22px rgb(37 49 66 / 0.22);
+}
+
+.round-button:active {
+  transform: scale(0.94);
+}
+
+/* 播放 / 暂停字形 */
+.play-glyph {
+  position: relative;
+  display: block;
+  width: 24px;
+  height: 24px;
+}
+
+.play-glyph::before {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-top: 10px solid transparent;
+  border-bottom: 10px solid transparent;
+  border-left: 16px solid #fff;
+  content: "";
+  transform: translate(-38%, -50%);
+}
+
+.round-button.is-pause .play-glyph::before {
   display: none;
 }
 
-.finish-panel strong {
-  font-size: 20px;
+.play-glyph::after {
+  display: none;
 }
 
-.finish-panel span {
-  color: var(--muted);
+.round-button.is-pause .play-glyph::after {
+  display: block;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  box-sizing: border-box;
+  width: 16px;
+  height: 18px;
+  border-right: 5px solid #fff;
+  border-left: 5px solid #fff;
+  content: "";
+  transform: translate(-50%, -50%);
 }
 
-.finish-panel button {
-  grid-row: 1 / span 2;
-  grid-column: 2;
+/* 喇叭字形 */
+.speak-glyph {
+  position: relative;
+  display: block;
+  width: 24px;
+  height: 24px;
+}
+
+.speak-glyph::before {
+  position: absolute;
+  top: 50%;
+  left: 5px;
+  width: 13px;
+  height: 14px;
+  background: #fff;
+  content: "";
+  clip-path: polygon(0% 32%, 40% 32%, 100% 0%, 100% 100%, 40% 68%, 0% 68%);
+  transform: translateY(-50%);
+}
+
+.speak-glyph::after {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  width: 6px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-left: 0;
+  border-radius: 0 10px 10px 0;
+  content: "";
+  transform: translateY(-50%);
+}
+
+/* 唯一输入:按住说话 */
+.mic-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 76px;
+  border-radius: 18px;
+  font-size: 22px;
+  font-weight: 600;
+  box-shadow: 0 14px 30px rgb(21 122 110 / 0.28);
+  touch-action: none;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.mic-button:active {
+  transform: scale(0.99);
+}
+
+.mic-button.is-listening {
+  background: var(--listen);
+  box-shadow: 0 0 0 0 rgb(226 86 47 / 0.5);
+  animation: listen-pulse 1.2s infinite;
+}
+
+@keyframes listen-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(226 86 47 / 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 22px rgb(226 86 47 / 0);
+  }
+}
+
+.mic-glyph {
+  position: relative;
+  width: 16px;
+  height: 24px;
+  border: 3px solid #fff;
+  border-radius: 10px;
+}
+
+.mic-glyph::before {
+  position: absolute;
+  top: 23px;
+  left: 50%;
+  width: 22px;
+  height: 12px;
+  border-right: 3px solid #fff;
+  border-bottom: 3px solid #fff;
+  border-left: 3px solid #fff;
+  border-radius: 0 0 14px 14px;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.mic-glyph::after {
+  position: absolute;
+  top: 34px;
+  left: 50%;
+  width: 18px;
+  height: 3px;
+  background: #fff;
+  border-radius: 3px;
+  content: "";
+  transform: translateX(-50%);
 }
 
 @media (max-width: 760px) {
@@ -246,29 +266,16 @@ button:disabled {
   }
 
   .workbench {
-    padding: 10px;
-  }
-
-  .topbar,
-  .ask-row,
-  .topbar,
-  .ask-row {
-    flex-direction: column;
-  }
-
-  .icon-button {
-    width: 100%;
-  }
-
-  .practice-shell {
-    min-height: 62vh;
+    padding: 12px;
+    gap: 12px;
   }
 
   #writingBoard {
-    width: min(94vw, 620px);
+    width: min(92vw, 560px);
   }
 
-  .controls button {
-    flex: 1;
+  .mic-button {
+    min-height: 84px;
+    font-size: 24px;
   }
 }
