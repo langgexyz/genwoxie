@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>写字练习</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="workbench" aria-label="写字练习">
+        <div class="topbar">
+          <div class="ask-row">
+            <input
+              id="questionInput"
+              type="text"
+              value="山城夏天的城怎么写呀"
+              autocomplete="off"
+              inputmode="text"
+              aria-label="输入小朋友的问题"
+            />
+            <button id="loadBtn" type="button">播放</button>
+          </div>
+          <button id="voiceBtn" class="icon-button" type="button" aria-label="语音输入" title="语音输入">
+            <span class="mic-icon" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <div class="practice-shell">
+          <svg id="writingBoard" viewBox="0 0 640 640" role="img" aria-label="汉字临摹田字格">
+            <rect class="paper" x="0" y="0" width="640" height="640" rx="18" />
+            <path class="grid-line" d="M320 0V640M0 320H640" />
+            <path class="grid-dash" d="M0 0L640 640M640 0L0 640" />
+            <g id="traceLayer"></g>
+          </svg>
+          <div id="finishPanel" class="finish-panel" hidden>
+            <strong>写完了</strong>
+            <span>再练一遍会更熟。</span>
+            <button id="restartBtn" type="button">再写一遍</button>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button id="replayBtn" class="secondary" type="button">再看</button>
+          <button id="clearBtn" type="button">擦掉</button>
+        </div>
+
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.5/dist/hanzi-writer.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

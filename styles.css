@@ -1,0 +1,274 @@
+:root {
+  color-scheme: light;
+  --ink: #18202b;
+  --muted: #687386;
+  --line: #d8e1ec;
+  --paper: #fffaf0;
+  --accent: #157a6e;
+  --trace: #2563eb;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  height: 100vh;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  background: linear-gradient(135deg, #f5f8fb 0%, #eef5f4 52%, #faf5ec 100%);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 18px;
+  color: #fff;
+  background: var(--accent);
+  box-shadow: 0 8px 18px rgb(21 122 110 / 0.16);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.app {
+  display: grid;
+  height: 100vh;
+  padding: 14px;
+}
+
+.workbench {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(1080px, 100%);
+  min-width: 0;
+  margin: 0 auto;
+  border: 1px solid rgb(255 255 255 / 0.8);
+  border-radius: 18px;
+  padding: 14px;
+  background: rgb(255 255 255 / 0.78);
+  box-shadow: 0 24px 70px rgb(37 52 74 / 0.13);
+}
+
+.topbar,
+.ask-row,
+.controls {
+  display: flex;
+  align-items: center;
+}
+
+.topbar {
+  gap: 10px;
+}
+
+.ask-row {
+  flex: 1;
+  gap: 10px;
+  border: 1px solid #dde5ef;
+  border-radius: 12px;
+  padding: 8px;
+  background: #fff;
+}
+
+.ask-row input {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 14px;
+  background: #f7f9fc;
+  font-size: 17px;
+}
+
+.ask-row button {
+  min-width: 104px;
+}
+
+.icon-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  min-width: 52px;
+  padding: 0;
+  background: #253142;
+  box-shadow: 0 10px 22px rgb(37 49 66 / 0.18);
+}
+
+.mic-icon {
+  position: relative;
+  width: 16px;
+  height: 24px;
+  border: 3px solid #fff;
+  border-radius: 10px;
+}
+
+.mic-icon::before {
+  position: absolute;
+  top: 23px;
+  left: 50%;
+  width: 22px;
+  height: 12px;
+  border-right: 3px solid #fff;
+  border-bottom: 3px solid #fff;
+  border-left: 3px solid #fff;
+  border-radius: 0 0 14px 14px;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.mic-icon::after {
+  position: absolute;
+  top: 34px;
+  left: 50%;
+  width: 18px;
+  height: 3px;
+  background: #fff;
+  border-radius: 3px;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.practice-shell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 1;
+  min-height: 0;
+  height: calc(100vh - 144px);
+  border: 1px solid transparent;
+  border-radius: 18px;
+  background:
+    linear-gradient(#fff, #fff) padding-box,
+    linear-gradient(135deg, rgb(21 122 110 / 0.34), rgb(226 86 47 / 0.26)) border-box;
+}
+
+#writingBoard {
+  width: min(70vh, 90vw, 700px);
+  aspect-ratio: 1;
+  overflow: visible;
+  touch-action: none;
+  user-select: none;
+}
+
+.paper {
+  fill: var(--paper);
+  stroke: #d2bf9b;
+  stroke-width: 3;
+  filter: drop-shadow(0 18px 34px rgb(37 49 66 / 0.14));
+}
+
+.grid-line {
+  stroke: #dfc9a5;
+  stroke-width: 2.4;
+}
+
+.grid-dash {
+  stroke: #e6d6bb;
+  stroke-dasharray: 10 12;
+  stroke-width: 1.8;
+}
+
+.trace-line {
+  fill: none;
+  stroke: var(--trace);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 18;
+  opacity: 0.64;
+}
+
+.controls {
+  justify-content: center;
+  gap: 12px;
+}
+
+.secondary {
+  color: var(--ink);
+  background: #e9eef5;
+  box-shadow: none;
+}
+
+.tip-card,
+.word-bank {
+  display: none;
+}
+
+.finish-panel {
+  position: absolute;
+  inset: auto 24px 24px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  align-items: center;
+  border: 1px solid #b7d7cf;
+  border-radius: 12px;
+  padding: 14px;
+  background: rgb(255 255 255 / 0.96);
+  box-shadow: 0 12px 30px rgb(31 41 51 / 0.12);
+}
+
+.finish-panel[hidden] {
+  display: none;
+}
+
+.finish-panel strong {
+  font-size: 20px;
+}
+
+.finish-panel span {
+  color: var(--muted);
+}
+
+.finish-panel button {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+}
+
+@media (max-width: 760px) {
+  .app {
+    padding: 10px;
+  }
+
+  .workbench {
+    padding: 10px;
+  }
+
+  .topbar,
+  .ask-row,
+  .topbar,
+  .ask-row {
+    flex-direction: column;
+  }
+
+  .icon-button {
+    width: 100%;
+  }
+
+  .practice-shell {
+    min-height: 62vh;
+  }
+
+  #writingBoard {
+    width: min(94vw, 620px);
+  }
+
+  .controls button {
+    flex: 1;
+  }
+}
