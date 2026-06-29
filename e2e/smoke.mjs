@@ -50,16 +50,21 @@ await page.waitForSelector("#playPauseBtn:not(.is-pause)", { timeout: 20000 });
 await page.waitForTimeout(500);
 await page.screenshot({ path: `${out}/04-done.png` });
 
-// 演示完:实黑笔画(非轮廓)应铺满整字。HanziWriter 轮廓 path 带较低 opacity,
-// 这里数「被显式着色的笔画 group」是否齐全 —— 用整字所有 path 数兜底,
-// 再靠人/多模态看 04 截图确认整字变实黑。
-const strokeCount = await page.evaluate(() =>
-  document.querySelectorAll("#writingBoard path").length);
+// 演示完:毛笔墨迹画在 canvas 上(非 SVG)。数 canvas 上有多少不透明像素,
+// 确认整字真被墨铺出来(>3% 像素有墨即认为写出了字);再靠人/多模态看 04 截图确认形状。
+const inkRatio = await page.evaluate(() => {
+  const c = document.querySelector("#inkCanvas");
+  const ictx = c.getContext("2d");
+  const { data } = ictx.getImageData(0, 0, c.width, c.height);
+  let inked = 0;
+  for (let i = 3; i < data.length; i += 4) if (data[i] > 20) inked++;
+  return inked / (data.length / 4);
+});
 const title = await page.title();
 const micDisabled = await page.evaluate(() => document.querySelector("#micBtn").disabled);
 
-console.log(JSON.stringify({ errors, strokeCount, title, pausedShowsPlay, micDisabled }, null, 2));
+console.log(JSON.stringify({ errors, inkRatio, title, pausedShowsPlay, micDisabled }, null, 2));
 
-const ok = errors.length === 0 && strokeCount > 3 && title.includes("城") && pausedShowsPlay === true;
+const ok = errors.length === 0 && inkRatio > 0.03 && title.includes("城") && pausedShowsPlay === true;
 await browser.close();
 process.exit(ok ? 0 : 1);

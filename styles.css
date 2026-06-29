@@ -92,6 +92,17 @@ button:disabled {
   stroke-width: 1.8;
 }
 
+/* 墨迹画布:盖在田字格 SVG 上,与之同尺寸同位置,毛笔笔画画在这里 */
+.ink-canvas {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(64vh, 86vw, 640px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
 .board-controls {
   position: absolute;
   bottom: 18px;
@@ -287,6 +298,10 @@ button:disabled {
   }
 
   #writingBoard {
+    width: min(92vw, 560px);
+  }
+
+  .ink-canvas {
     width: min(92vw, 560px);
   }
 
