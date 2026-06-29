@@ -5,6 +5,7 @@ const playPauseBtn = document.querySelector("#playPauseBtn");
 const speakBtn = document.querySelector("#speakBtn");
 const micBtn = document.querySelector("#micBtn");
 const micLabel = micBtn.querySelector(".mic-label");
+const testInput = document.querySelector("#testInput");
 
 let writer = null;
 let currentChar = "";
@@ -159,7 +160,20 @@ function setupVoiceInput() {
   });
 }
 
+// 测试入口:?test 时显示打字框,绕过语音直接查字。复用 extractTargetCharacter,
+// 所以「城」和「城怎么写」都能识别到目标字。
+function setupTestInput() {
+  if (!new URLSearchParams(location.search).has("test")) return;
+  testInput.hidden = false;
+  testInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    const char = extractTargetCharacter(testInput.value);
+    if (char) loadCharacter(char);
+  });
+}
+
 playPauseBtn.addEventListener("click", togglePlayPause);
 speakBtn.addEventListener("click", () => speakOnce(currentChar || ""));
 
 setupVoiceInput();
+setupTestInput();

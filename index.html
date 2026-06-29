@@ -30,6 +30,17 @@
           <span class="mic-glyph" aria-hidden="true"></span>
           <span class="mic-label">按住说要写的字</span>
         </button>
+
+        <!-- 测试入口:仅 ?test 时显示,绕过语音直接打字查字。小朋友的正式界面不出现。 -->
+        <input
+          id="testInput"
+          class="test-input"
+          type="text"
+          hidden
+          autocomplete="off"
+          placeholder="测试:输入要写的字,回车"
+          aria-label="测试:输入要写的字"
+        />
       </section>
     </main>
 
