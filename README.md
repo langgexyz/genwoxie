@@ -39,3 +39,5 @@ python3 -m http.server 8731
 python3 -m http.server 8731 &
 node e2e/smoke.mjs   # 截图落 .cache/genwoxie/
 ```
+
+`e2e/test-input.mjs`：校验 `?test` 打字框入口。带 `?test` 参数访问（`http://localhost:8731/?test`）才显示一个打字框，绕过语音直接输入要写的字、回车查字，方便手测 / e2e；正式界面（无参数）不出现这个框。
