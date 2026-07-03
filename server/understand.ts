@@ -156,30 +156,29 @@ export async function understandAudio(
   format: string,
   cfg: UnderstandConfig,
 ): Promise<UnderstandOutcome> {
-  // 三路全同步(user 拍板:孩子无法自判错误,准确率优先于延迟):
-  // ASR 与 omni 并行独立听音(独立错误对裁判更有信息量,也比串行快 0.7s),
-  // GPT 拿两路证据综合终审;GPT 失败走保守回退(一致才用,分歧宁可请孩子重说)。
-  const [transcriptRaw, omniResult] = await Promise.all([
-    transcribe(audioB64, format, cfg).catch(() => ""),
-    omniListen(audioB64, format, cfg),
-  ]);
-  const transcript = transcriptRaw.trim().slice(0, 100);
+  // 默认两路混合(user 实测 28.7s 后拍板弃全同步三路):ASR 转写作参考喂给
+  // omni 互相印证(eval 17/18,p50 1.7s,噪音例可修对)。配了 arbiter 才升级
+  // 为三路全同步终审(代码保留,配置驱动)。
+  const transcript = (await transcribe(audioB64, format, cfg).catch(() => "")).trim().slice(0, 100);
+  const omniResult = await omniListen(audioB64, format, cfg, transcript);
 
   if (cfg.arbiter) {
     const verdict = await arbitrate(transcript, omniResult, cfg.arbiter);
     if (verdict) return { result: verdict, transcript, arbitrated: true };
     return { result: fallbackWithoutJudge(transcript, omniResult), transcript, arbitrated: false };
   }
-  // 未配裁判(本地降级模式):按保守策略合并两路
-  return { result: fallbackWithoutJudge(transcript, omniResult), transcript, arbitrated: false };
+  return { result: omniResult, transcript, arbitrated: false };
 }
 
 async function omniListen(
   audioB64: string,
   format: string,
   cfg: UnderstandConfig,
+  transcript: string,
 ): Promise<UnderstandResult> {
-  const prompt = UNDERSTAND_PROMPT;
+  const prompt = transcript
+    ? `${UNDERSTAND_PROMPT}\n专职语音识别对这段音频的参考转写(可能有错,与你自己听到的互相印证):"${transcript.replaceAll('"', "'")}"`
+    : UNDERSTAND_PROMPT;
 
   const body = {
     model: cfg.model ?? DEFAULT_MODEL,
