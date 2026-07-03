@@ -393,3 +393,12 @@ button:disabled {
     font-size: 24px;
   }
 }
+
+/* 系统"减弱动态效果":装饰性循环动画全停(书写演示是内容不是装饰,保留) */
+@media (prefers-reduced-motion: reduce) {
+  .mic-button.is-beckoning,
+  .wave-bars i,
+  .thinking-dots i {
+    animation: none;
+  }
+}

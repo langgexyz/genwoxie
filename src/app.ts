@@ -11,6 +11,7 @@ import { extractTargetCharacter, buildSpeechText } from "./extract.js";
 import { loadCharacterData, type CharacterData } from "./chardata.js";
 import { HoldRecorder, recordingSupported } from "./recorder.js";
 import { pollAuditSignal, probeUnderstandApi, requestUnderstand } from "./understand.js";
+import { BrushSound } from "./brushsound.js";
 
 const BOARD = 640;
 const PADDING = 50;
@@ -38,6 +39,34 @@ interface Stroke {
 // idle: 还没字 / animating: 正在写 / paused: 写到一半停 / done: 整字已留在格子里
 type DemoState = "idle" | "animating" | "paused" | "done";
 type PlayGlyph = "play" | "pause";
+
+// 显隐过渡帮手:hidden 属性保持为状态源(e2e 断言/无障碍语义不变),
+// 用 WAAPI 在前后补淡入淡出;系统开了"减弱动态效果"则直接切。
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+function revealEl(el: HTMLElement, rise = false): void {
+  for (const a of el.getAnimations()) a.cancel(); // 打断进行中的隐藏,防其完成回调再藏回去
+  el.hidden = false;
+  if (reducedMotion.matches) return;
+  const from: Keyframe = rise
+    ? { opacity: 0, transform: "translate(-50%, 10px)" }
+    : { opacity: 0 };
+  const to: Keyframe = rise ? { opacity: 1, transform: "translate(-50%, 0)" } : { opacity: 1 };
+  el.animate([from, to], { duration: 260, easing: "ease-out" });
+}
+
+function concealEl(el: HTMLElement): void {
+  for (const a of el.getAnimations()) a.cancel();
+  if (el.hidden) return;
+  if (reducedMotion.matches) {
+    el.hidden = true;
+    return;
+  }
+  const anim = el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: "ease-in" });
+  anim.addEventListener("finish", () => {
+    el.hidden = true;
+  });
+}
 
 function mustQuery<T extends Element>(root: ParentNode, selector: string): T {
   const el = root.querySelector<T>(selector);
@@ -70,6 +99,7 @@ let totalVt = 0; // 整字书写时间线总长(ms)
 let runToken = 0; // 每次重写自增,旧动画看到 token 变了就退出
 let paused = false;
 let demoState: DemoState = "idle";
+const brush = new BrushSound(); // 毛笔沙沙声,随书写提按调制
 
 function applyGlyphTransform(): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -157,6 +187,18 @@ function drawNib(stroke: Stroke, tip: Point, u: number): void {
   ctx.restore();
 }
 
+// 当前时刻的沙沙声强度:笔画进行中按提按(pressRadius)调制,粗处沉厚
+// 尖锋渐轻;笔画间隙/收尾归零。
+function brushLevelAt(vt: number): number {
+  for (const s of strokes) {
+    if (vt > s.t0 && vt < s.t1) {
+      const u = easeInOut((vt - s.t0) / (s.t1 - s.t0));
+      return 0.04 + 0.08 * (pressRadius(u) / BASE_RADIUS);
+    }
+  }
+  return 0;
+}
+
 function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
@@ -201,20 +243,35 @@ async function playDemo(): Promise<void> {
   paused = false;
   demoState = "animating";
   setPlayGlyph("pause");
+  brush.ensure(); // 处于用户手势调用链(按住说话/点重播/回车),满足自动播放策略
   let vt = 0;
   let last = performance.now();
   while (vt < totalVt) {
-    if (token !== runToken) return;
+    if (token !== runToken) {
+      brush.stop();
+      return;
+    }
     const now = performance.now();
     if (!paused) {
       vt += now - last;
       renderAt(vt);
+      brush.set(brushLevelAt(vt));
+    } else {
+      brush.set(0);
     }
     last = now;
     await raf();
   }
+  brush.stop();
   if (token !== runToken) return;
   renderAt(totalVt); // 整字留在格子里供照抄
+  // 完成感:整字轻微"盖章"脉动一次,给孩子一个"写好了"的视觉信号
+  if (!reducedMotion.matches) {
+    canvas.animate(
+      [{ transform: "scale(1)" }, { transform: "scale(1.022)" }, { transform: "scale(1)" }],
+      { duration: 420, easing: "ease-in-out" },
+    );
+  }
   demoState = "done";
   setPlayGlyph("play");
 }
@@ -254,15 +311,23 @@ function speakOnce(text: string): void {
 
 // 纠错切字的视觉过渡:旧字淡出 -> 清板 -> (调用方起笔写新字)。
 async function fadeOutBoard(): Promise<void> {
-  canvas.style.transition = "opacity 0.45s ease";
-  canvas.style.opacity = "0";
-  await new Promise((r) => setTimeout(r, 480));
+  if (!reducedMotion.matches) {
+    // 墨晕散开的"擦掉"隐喻:模糊+淡出,比纯 opacity 更像擦除
+    canvas.animate(
+      [
+        { opacity: 1, filter: "blur(0px)" },
+        { opacity: 0, filter: "blur(7px)" },
+      ],
+      { duration: 460, easing: "ease-in" },
+    );
+    await new Promise((r) => setTimeout(r, 470));
+  }
   clearBoard();
-  canvas.style.opacity = "1";
 }
 
 function resetToIdle(): void {
   runToken++;
+  brush.stop();
   strokes = [];
   totalVt = 0;
   currentChar = "";
@@ -270,14 +335,17 @@ function resetToIdle(): void {
   clearBoard();
   demoState = "idle";
   setPlayGlyph("play");
-  // 回到空态:唯一动作重新变成"按住说话",次级控件收起、引导语回来
+  // 回到空态:唯一动作重新变成"按住说话",次级控件收起、引导语回来。
+  // 这里是"世界归零"时刻(按下清场/失败复位),与画布瞬时清空同步,硬切
+  // 才干脆;渐隐只用于温和的状态流(墨点/控件出现)。
+  for (const a of boardControls.getAnimations()) a.cancel();
   boardControls.hidden = true;
   showIdleGuidance();
 }
 
 // 空态引导(提示语+麦克风呼吸脉动)统一开关,避免两者状态漂移
 function showIdleGuidance(): void {
-  boardHint.hidden = false;
+  revealEl(boardHint);
   micBtn.classList.add("is-beckoning");
 }
 
@@ -310,9 +378,9 @@ async function loadCharacter(char: string, context = "", speechPrefix = ""): Pro
   currentContext = context;
   document.title = `${char} · 跟我写`;
   buildTimeline(data);
-  // 格子里有字了,"再看/再听"才有意义,此时才亮出次级控件
+  // 格子里有字了,"再看/再听"才有意义,此时才亮出次级控件(上滑淡入)
   hideIdleGuidance();
-  boardControls.hidden = false;
+  revealEl(boardControls, true);
   speakOnce(speechPrefix + buildSpeechText(char, context));
   void playDemo();
 }
@@ -405,7 +473,7 @@ function setupRecorderInput(): void {
     const myRound = round; // 本轮令牌:期间用户再按下则一切结果作废
     // 在想:墨点起伏动画(空态引导先让位),孩子不识字,动效即"我在处理"
     boardHint.hidden = true;
-    thinkingDots.hidden = false;
+    revealEl(thinkingDots);
     try {
       const wav = await recorder.stop();
       if (myRound !== round) return; // 新一轮已开始,本轮作废
@@ -424,7 +492,7 @@ function setupRecorderInput(): void {
       if (myRound === round) speakOnce("网络好像不太好，等一下再试吧。");
     } finally {
       if (myRound === round) {
-        thinkingDots.hidden = true;
+        concealEl(thinkingDots);
         // 没写出字(误触/没听清/网络错)则空态引导回来
         if (demoState === "idle") showIdleGuidance();
         micLabel.textContent = MIC_IDLE_LABEL;
