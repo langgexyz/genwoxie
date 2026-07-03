@@ -10,20 +10,33 @@
     <main class="app">
       <section class="workbench" aria-label="跟我写">
         <div class="practice-shell">
-          <svg id="writingBoard" viewBox="0 0 640 640" role="img" aria-label="汉字田字格">
-            <rect class="paper" x="0" y="0" width="640" height="640" rx="18" />
-            <path class="grid-line" d="M320 0V640M0 320H640" />
-            <path class="grid-dash" d="M0 0L640 640M640 0L0 640" />
-          </svg>
-          <canvas id="inkCanvas" class="ink-canvas" aria-hidden="true"></canvas>
+          <!-- 田字格/墨迹/空态提示同锚一个容器:画布永远与格子对齐,不受 shell 内边距影响 -->
+          <div class="board-wrap">
+            <svg id="writingBoard" viewBox="0 0 640 640" role="img" aria-label="汉字田字格">
+              <rect class="paper" x="0" y="0" width="640" height="640" rx="18" />
+              <path class="grid-line" d="M320 0V640M0 320H640" />
+              <path class="grid-dash" d="M0 0L640 640M640 0L0 640" />
+            </svg>
+            <canvas id="inkCanvas" class="ink-canvas" aria-hidden="true"></canvas>
 
-          <div class="board-controls">
-            <button id="playPauseBtn" class="round-button" type="button" aria-label="播放笔顺" title="播放笔顺">
-              <span class="play-glyph" aria-hidden="true"></span>
-            </button>
-            <button id="speakBtn" class="round-button" type="button" aria-label="读这个字" title="读这个字">
-              <span class="speak-glyph" aria-hidden="true"></span>
-            </button>
+            <!-- 空态引导:格子里还没字时,页面上唯一可做的事就是按住说话 -->
+            <p id="boardHint" class="board-hint">按住绿色按钮<br />说出想写的字</p>
+          </div>
+
+          <!-- 次级动作(再看/再听)只在格子里有字后才出现,空态是死按钮不该展示 -->
+          <div id="boardControls" class="board-controls" hidden>
+            <div class="control-item">
+              <button id="playPauseBtn" class="round-button" type="button" aria-label="再写一遍" title="再写一遍">
+                <span class="play-glyph" aria-hidden="true"></span>
+              </button>
+              <span class="control-caption">再写一遍</span>
+            </div>
+            <div class="control-item">
+              <button id="speakBtn" class="round-button" type="button" aria-label="再读一遍" title="再读一遍">
+                <span class="speak-glyph" aria-hidden="true"></span>
+              </button>
+              <span class="control-caption">再读一遍</span>
+            </div>
           </div>
         </div>
 

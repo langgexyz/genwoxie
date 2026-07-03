@@ -27,6 +27,8 @@ function mustQuery(root, selector) {
     return el;
 }
 const canvas = mustQuery(document, "#inkCanvas");
+const boardHint = mustQuery(document, "#boardHint");
+const boardControls = mustQuery(document, "#boardControls");
 const playPauseBtn = mustQuery(document, "#playPauseBtn");
 const speakBtn = mustQuery(document, "#speakBtn");
 const micBtn = mustQuery(document, "#micBtn");
@@ -233,6 +235,9 @@ function resetToIdle() {
     clearBoard();
     demoState = "idle";
     setPlayGlyph("play");
+    // 回到空态:唯一动作重新变成"按住说话",次级控件收起、引导语回来
+    boardHint.hidden = false;
+    boardControls.hidden = true;
 }
 // 回声消歧:识别到字后把语境词读回去(「城,小城夏天的城」)。孩子不认识
 // 屏幕上的字,听语境词对不对是他唯一能校验同音字错误的通道;顺带让多音字
@@ -258,6 +263,9 @@ async function loadCharacter(char, context = "") {
     currentContext = context;
     document.title = `${char} · 跟我写`;
     buildTimeline(data);
+    // 格子里有字了,"再看/再听"才有意义,此时才亮出次级控件
+    boardHint.hidden = true;
+    boardControls.hidden = false;
     speakOnce(buildSpeechText(char, context));
     void playDemo();
 }
