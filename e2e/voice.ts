@@ -159,7 +159,7 @@ const ok =
   echoSpeech === "城，小城夏天的城" &&
   ink > 0.03 &&
   title.includes("城") &&
-  labelRestored === "按住说要写的字" &&
+  labelRestored === "按住说“小城夏天的城怎么写”" &&
   correctionSpeech === "听错啦，是城，小城夏天的城" &&
   (weakHintSpeech ?? "").includes("有名的词") &&
   pressReset.controlsHidden &&
