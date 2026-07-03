@@ -1,0 +1,24 @@
+# genwoxie 生产容器(ccdirect 主机,路径 /xie/ 反代到本容器)。
+# 零构建:官方 node 镜像 + 只读挂载仓库(dist/ 已入库),部署 = git pull + up -d。
+# 小内存生产机(1.6G)禁止在机上构建镜像,这是既定运维纪律。
+#
+# 首次部署:
+#   1. git clone https://github.com/langgexyz/genwoxie.git /opt/genwoxie
+#   2. cp deploy/.env.example /opt/genwoxie/deploy/.env 并填 key
+#   3. cd /opt/genwoxie/deploy && docker compose up -d
+# 日常部署: scripts/deploy-ccdirect.sh
+name: genwoxie
+services:
+  web:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /app
+    command: node --experimental-strip-types server/dev.ts
+    env_file: .env
+    environment:
+      PORT: "8731"
+    volumes:
+      - ..:/app:ro
+    ports:
+      - "127.0.0.1:8850:8731" # 只对本机 nginx 暴露
+    mem_limit: 256m
