@@ -15,6 +15,7 @@ export interface UnderstandConfig {
 }
 
 const DEFAULT_MODEL = "qwen3.5-omni-flash";
+const ASR_MODEL = "qwen3-asr-flash-2026-02-10";
 
 export const UNDERSTAND_PROMPT = [
   '音频是孩子在问要写哪个汉字。返回 JSON:{"char":"...","context":"..."}',
@@ -46,11 +47,50 @@ export function extractJsonObject(text: string): UnderstandResult {
   }
 }
 
+// 混合识别:先拿专职 ASR 的逐字转写,再让 omni 结合"自己听到的+参考转写"判定。
+// 依据(真实错例实证,2026-07-03 背景噪音案例):噪音下专职 ASR 抗噪强于 omni
+// (转写对了"城"),而干净语音下 omni 的同音字消歧强于 ASR(M0 数据)——互补。
+// ASR 失败不挡主流程,退化为纯 omni。
+async function transcribe(audioB64: string, format: string, cfg: UnderstandConfig): Promise<string> {
+  const body = {
+    model: ASR_MODEL,
+    stream: true,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_audio",
+            input_audio: { data: `data:audio/${format};base64,${audioB64}`, format },
+          },
+        ],
+      },
+    ],
+  };
+  const res = await fetch(`${cfg.baseUrl}/compatible-mode/v1/chat/completions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${cfg.apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`asr HTTP ${res.status}`);
+  return collectSse(await res.text());
+}
+
 export async function understandAudio(
   audioB64: string,
   format: string,
   cfg: UnderstandConfig,
 ): Promise<UnderstandResult> {
+  let transcript = "";
+  try {
+    transcript = (await transcribe(audioB64, format, cfg)).trim().slice(0, 100);
+  } catch {
+    // ASR 挂了退化为纯 omni
+  }
+  const prompt = transcript
+    ? `${UNDERSTAND_PROMPT}\n专职语音识别对这段音频的参考转写(可能有错,与你自己听到的互相印证):"${transcript.replaceAll('"', "'")}"`
+    : UNDERSTAND_PROMPT;
+
   const body = {
     model: cfg.model ?? DEFAULT_MODEL,
     stream: true, // omni 系列强制流式
@@ -63,7 +103,7 @@ export async function understandAudio(
             type: "input_audio",
             input_audio: { data: `data:audio/${format};base64,${audioB64}`, format },
           },
-          { type: "text", text: UNDERSTAND_PROMPT },
+          { type: "text", text: prompt },
         ],
       },
     ],
@@ -79,7 +119,10 @@ export async function understandAudio(
   }
 
   // 交互是"松手后一次出结果",无需逐 token 转发:等 SSE 收完再拼装。
-  const raw = await res.text();
+  return extractJsonObject(collectSse(await res.text()));
+}
+
+function collectSse(raw: string): string {
   const parts: string[] = [];
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
@@ -90,5 +133,5 @@ export async function understandAudio(
     const content = chunk.choices?.[0]?.delta?.content;
     if (content) parts.push(content);
   }
-  return extractJsonObject(parts.join(""));
+  return parts.join("");
 }
