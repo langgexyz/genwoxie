@@ -92,6 +92,17 @@ button:disabled {
   stroke-width: 1.8;
 }
 
+/* 墨迹画布:盖在田字格 SVG 上,与之同尺寸同位置,毛笔笔画画在这里 */
+.ink-canvas {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(64vh, 86vw, 640px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
 .board-controls {
   position: absolute;
   bottom: 18px;
@@ -260,6 +271,22 @@ button:disabled {
   transform: translateX(-50%);
 }
 
+/* 测试入口输入框:默认 hidden 属性藏起,?test 时 JS 撤掉 hidden 才显示 */
+.test-input {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px dashed var(--muted);
+  padding: 12px 16px;
+  font-size: 18px;
+  color: var(--ink);
+  background: rgb(255 255 255 / 0.7);
+}
+
+.test-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 @media (max-width: 760px) {
   .app {
     padding: 10px;
@@ -271,6 +298,10 @@ button:disabled {
   }
 
   #writingBoard {
+    width: min(92vw, 560px);
+  }
+
+  .ink-canvas {
     width: min(92vw, 560px);
   }
 
