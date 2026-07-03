@@ -21,6 +21,11 @@
 
             <!-- 空态引导:格子里还没字时,页面上唯一可做的事就是按住说话 -->
             <p id="boardHint" class="board-hint">按住绿色按钮<br />说出想写的字</p>
+
+            <!-- 在想:松手到出字之间的思考动画(墨点起伏),孩子不识字,动效即反馈 -->
+            <div id="thinkingDots" class="thinking-dots" hidden aria-hidden="true">
+              <i></i><i></i><i></i>
+            </div>
           </div>
 
           <!-- 次级动作(再看/再听)只在格子里有字后才出现,空态是死按钮不该展示 -->
@@ -56,6 +61,8 @@
             <path d="M5.5 11v.8a6.5 6.5 0 0 0 13 0V11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
             <path d="M12 18.6v3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
           </svg>
+          <!-- 在听:声波条跳动(替换麦克风图标),录音中的动效语言 -->
+          <span class="wave-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
           <span class="mic-label">按住说要写的字</span>
         </button>
 
