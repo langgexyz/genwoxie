@@ -1,13 +1,11 @@
 // 话术提取单测表:孩子的真实说法 -> 期望的 {char, context}。
-// 跑法: node --test tests/
+// 跑法: npm test (先 build,再对构建产物 dist/ 跑,顺带守住 dist 与源码不漂移)
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 
-const require = createRequire(import.meta.url);
-const { extractTargetCharacter, buildSpeechText } = require("../extract.js");
+import { extractTargetCharacter, buildSpeechText, type ExtractResult } from "../dist/extract.js";
 
-const CASES = [
+const CASES: readonly [input: string, char: string, context: string][] = [
   // 「语境词的X…写」:最标准的问法,语境词用于消歧
   ["小城夏天的城怎么写", "城", "小城夏天"],
   ["城市的城怎么写", "城", "城市"],
@@ -43,7 +41,8 @@ const CASES = [
 
 for (const [input, char, context] of CASES) {
   test(`extract(${JSON.stringify(input)}) -> ${char || "(空)"}/${context || "(无语境)"}`, () => {
-    assert.deepEqual(extractTargetCharacter(input), { char, context });
+    const expected: ExtractResult = { char, context };
+    assert.deepEqual(extractTargetCharacter(input), expected);
   });
 }
 

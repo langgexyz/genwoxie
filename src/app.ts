@@ -1,11 +1,14 @@
 // 「跟我写」:语音查字 -> 毛笔沿中线一笔一笔写出来 -> 写完留在格子里供照抄。
 //
-// 字形数据用 hanzi-writer 的真实楷体轮廓(strokes)+ 中线(medians),
+// 字形数据(真实楷体轮廓 strokes + 中线 medians)由 chardata.ts 按需拉取,
 // 自己用 canvas 当毛笔渲染:近实心墨沿中线运笔、轮廓裁剪保证范字形状利落、
 // 起收笔提按、按笔画长短的书写速度、可播放/暂停。
 //
 // 坐标:字形在 1024x1024 字面坐标(y 向上),映射到 640 田字格:
 //   translate(PADDING, BOARD-PADDING) 后 scale(SCALE, -SCALE),之后都在字面坐标里画。
+
+import { extractTargetCharacter, buildSpeechText } from "./extract.js";
+import { loadCharacterData, type CharacterData } from "./chardata.js";
 
 const BOARD = 640;
 const PADDING = 50;
@@ -19,13 +22,37 @@ const STROKE_MIN_MS = 360;
 const STROKE_MAX_MS = 1400;
 const BETWEEN_STROKES_MS = 230;
 
-const canvas = document.querySelector("#inkCanvas");
-const ctx = canvas.getContext("2d");
-const playPauseBtn = document.querySelector("#playPauseBtn");
-const speakBtn = document.querySelector("#speakBtn");
-const micBtn = document.querySelector("#micBtn");
-const micLabel = micBtn.querySelector(".mic-label");
-const testInput = document.querySelector("#testInput");
+type Point = [number, number];
+
+interface Stroke {
+  outline: Path2D;
+  dense: Point[];
+  cum: number[];
+  total: number;
+  t0: number;
+  t1: number;
+}
+
+// idle: 还没字 / animating: 正在写 / paused: 写到一半停 / done: 整字已留在格子里
+type DemoState = "idle" | "animating" | "paused" | "done";
+type PlayGlyph = "play" | "pause";
+
+function mustQuery<T extends Element>(root: ParentNode, selector: string): T {
+  const el = root.querySelector<T>(selector);
+  if (!el) throw new Error(`missing element: ${selector}`);
+  return el;
+}
+
+const canvas = mustQuery<HTMLCanvasElement>(document, "#inkCanvas");
+const playPauseBtn = mustQuery<HTMLButtonElement>(document, "#playPauseBtn");
+const speakBtn = mustQuery<HTMLButtonElement>(document, "#speakBtn");
+const micBtn = mustQuery<HTMLButtonElement>(document, "#micBtn");
+const micLabel = mustQuery<HTMLSpanElement>(micBtn, ".mic-label");
+const testInput = mustQuery<HTMLInputElement>(document, "#testInput");
+
+const maybeCtx = canvas.getContext("2d");
+if (!maybeCtx) throw new Error("2d canvas context unavailable");
+const ctx = maybeCtx;
 
 const dpr = window.devicePixelRatio || 1;
 canvas.width = BOARD * dpr;
@@ -33,28 +60,27 @@ canvas.height = BOARD * dpr;
 
 let currentChar = "";
 let currentContext = ""; // 语境词(「小城夏天的城」的「小城夏天」),读音消歧用
-let strokes = []; // {outline, dense, cum, total, t0, t1}
+let strokes: Stroke[] = [];
 let totalVt = 0; // 整字书写时间线总长(ms)
 let runToken = 0; // 每次重写自增,旧动画看到 token 变了就退出
 let paused = false;
-// idle: 还没字 / animating: 正在写 / paused: 写到一半停 / done: 整字已留在格子里
-let demoState = "idle";
+let demoState: DemoState = "idle";
 
-function applyGlyphTransform() {
+function applyGlyphTransform(): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.translate(PADDING, BOARD - PADDING);
   ctx.scale(SCALE, -SCALE);
 }
 
-function clearBoard() {
+function clearBoard(): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
 // 稀疏中线点按弧长重采样成密集点 + 累计弧长,供"写到一半"用。
-function resampleMedian(points) {
-  const dense = [];
-  const cum = [0];
+function resampleMedian(points: readonly Point[]): Pick<Stroke, "dense" | "cum" | "total"> {
+  const dense: Point[] = [];
+  const cum: number[] = [0];
   let total = 0;
   for (let i = 0; i < points.length - 1; i++) {
     const [x0, y0] = points[i];
@@ -64,24 +90,26 @@ function resampleMedian(points) {
       const t = s / steps;
       const x = x0 + (x1 - x0) * t;
       const y = y0 + (y1 - y0) * t;
-      if (dense.length) total += Math.hypot(x - dense[dense.length - 1][0], y - dense[dense.length - 1][1]);
+      const prev = dense[dense.length - 1];
+      if (prev) total += Math.hypot(x - prev[0], y - prev[1]);
       dense.push([x, y]);
       cum.push(total);
     }
   }
   const last = points[points.length - 1];
-  if (dense.length) total += Math.hypot(last[0] - dense[dense.length - 1][0], last[1] - dense[dense.length - 1][1]);
-  dense.push(last);
+  const prev = dense[dense.length - 1];
+  if (prev) total += Math.hypot(last[0] - prev[0], last[1] - prev[1]);
+  dense.push([last[0], last[1]]);
   cum.push(total);
   return { dense, cum, total };
 }
 
 // 起收笔提按:两端略细、中段最粗。最终形状由轮廓裁剪决定,这里只影响饱满度。
-function pressRadius(u) {
+function pressRadius(u: number): number {
   return BASE_RADIUS * (0.55 + 0.45 * Math.sin(Math.PI * (0.08 + 0.84 * u)));
 }
 
-function inkDab(x, y, radius) {
+function inkDab(x: number, y: number, radius: number): void {
   // 近实心:让裁剪轮廓产生利落的楷书边和尖锋,只留极细软边做抗锯齿。
   const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
   grad.addColorStop(0, `rgba(${INK}, 1)`);
@@ -94,7 +122,7 @@ function inkDab(x, y, radius) {
 }
 
 // 在一笔的轮廓裁剪内沿中线盖墨到 revealLen 弧长处,返回当前笔尖位置。
-function stampStroke(stroke, revealLen) {
+function stampStroke(stroke: Stroke, revealLen: number): Point {
   const { outline, dense, cum, total } = stroke;
   ctx.save();
   applyGlyphTransform();
@@ -109,7 +137,7 @@ function stampStroke(stroke, revealLen) {
   return tip;
 }
 
-function drawNib(stroke, tip, u) {
+function drawNib(stroke: Stroke, tip: Point, u: number): void {
   ctx.save();
   applyGlyphTransform();
   ctx.clip(stroke.outline);
@@ -124,16 +152,16 @@ function drawNib(stroke, tip, u) {
   ctx.restore();
 }
 
-function easeInOut(t) {
+function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
 
-function raf() {
-  return new Promise((r) => requestAnimationFrame(r));
+function raf(): Promise<number> {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
 }
 
 // 按整字时间线 vt(ms)渲染:已过时间的笔画铺满,正在写的笔画露到对应弧长 + 笔尖。
-function renderAt(vt) {
+function renderAt(vt: number): void {
   clearBoard();
   for (const s of strokes) {
     if (vt >= s.t1) {
@@ -146,10 +174,10 @@ function renderAt(vt) {
   }
 }
 
-function buildTimeline(data) {
+function buildTimeline(data: CharacterData): void {
   strokes = data.strokes.map((path, i) => {
-    const { dense, cum, total } = resampleMedian(data.medians[i]);
-    return { outline: new Path2D(path), dense, cum, total, t0: 0, t1: 0 };
+    const median = resampleMedian(data.medians[i]);
+    return { outline: new Path2D(path), ...median, t0: 0, t1: 0 };
   });
   let cursor = 0;
   strokes.forEach((s, i) => {
@@ -162,7 +190,7 @@ function buildTimeline(data) {
 }
 
 // 从头写一遍。paused 翻 true 时时间线冻结,翻回 false 继续(供暂停/继续)。
-async function playDemo() {
+async function playDemo(): Promise<void> {
   if (!strokes.length) return;
   const token = ++runToken;
   paused = false;
@@ -186,7 +214,7 @@ async function playDemo() {
   setPlayGlyph("play");
 }
 
-function togglePlayPause() {
+function togglePlayPause(): void {
   if (!strokes.length) return;
   if (demoState === "animating") {
     paused = true;
@@ -198,17 +226,17 @@ function togglePlayPause() {
     setPlayGlyph("pause");
   } else {
     // idle / done -> 从头重写
-    playDemo();
+    void playDemo();
   }
 }
 
-function setPlayGlyph(mode) {
+function setPlayGlyph(mode: PlayGlyph): void {
   playPauseBtn.classList.toggle("is-pause", mode === "pause");
   playPauseBtn.setAttribute("aria-label", mode === "pause" ? "暂停笔顺" : "播放笔顺");
   playPauseBtn.title = mode === "pause" ? "暂停笔顺" : "播放笔顺";
 }
 
-function speakOnce(text) {
+function speakOnce(text: string): void {
   if (!text) return;
   window.lastSpeech = text; // headless 听不到 TTS,e2e 靠这个断言播报内容
   if (!("speechSynthesis" in window)) return;
@@ -219,7 +247,7 @@ function speakOnce(text) {
   window.speechSynthesis.speak(utterance);
 }
 
-function resetToIdle() {
+function resetToIdle(): void {
   runToken++;
   strokes = [];
   totalVt = 0;
@@ -233,12 +261,12 @@ function resetToIdle() {
 // 回声消歧:识别到字后把语境词读回去(「城,小城夏天的城」)。孩子不认识
 // 屏幕上的字,听语境词对不对是他唯一能校验同音字错误的通道;顺带让多音字
 // 在词里读出正确读音。
-async function loadCharacter(char, context = "") {
+async function loadCharacter(char: string, context = ""): Promise<void> {
   if (!char) return;
 
-  let data;
+  let data: CharacterData | null;
   try {
-    data = await window.GWXData.loadCharacterData(char);
+    data = await loadCharacterData(char);
   } catch {
     resetToIdle();
     speakOnce("网络好像不太好，等一下再试吧。");
@@ -254,26 +282,26 @@ async function loadCharacter(char, context = "") {
   currentContext = context;
   document.title = `${char} · 跟我写`;
   buildTimeline(data);
-  speakOnce(window.GWX.buildSpeechText(char, context));
-  playDemo();
+  speakOnce(buildSpeechText(char, context));
+  void playDemo();
 }
 
-function setupVoiceInput() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
+function setupVoiceInput(): void {
+  const SpeechRecognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+  if (!SpeechRecognitionCtor) {
     micBtn.disabled = true;
     micLabel.textContent = "这个浏览器不支持语音";
     return;
   }
 
-  const recognition = new SpeechRecognition();
+  const recognition = new SpeechRecognitionCtor();
   recognition.lang = "zh-CN";
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
 
   let holding = false;
 
-  const startListening = (event) => {
+  const startListening = (event: Event): void => {
     event.preventDefault();
     if (holding) return;
     holding = true;
@@ -286,7 +314,7 @@ function setupVoiceInput() {
     }
   };
 
-  const stopListening = () => {
+  const stopListening = (): void => {
     if (!holding) return;
     holding = false;
     micBtn.classList.remove("is-listening");
@@ -300,9 +328,9 @@ function setupVoiceInput() {
   micBtn.addEventListener("pointerleave", stopListening);
 
   recognition.addEventListener("result", (event) => {
-    const { char, context } = window.GWX.extractTargetCharacter(event.results[0][0].transcript);
+    const { char, context } = extractTargetCharacter(event.results[0][0].transcript);
     if (char) {
-      loadCharacter(char, context);
+      void loadCharacter(char, context);
     } else {
       speakOnce("没听清要写哪个字，再说一遍吧。");
     }
@@ -316,18 +344,21 @@ function setupVoiceInput() {
 }
 
 // 测试入口:?test 时显示打字框,绕过语音直接查字。
-function setupTestInput() {
+function setupTestInput(): void {
   if (!new URLSearchParams(location.search).has("test")) return;
   testInput.hidden = false;
   testInput.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
-    const { char, context } = window.GWX.extractTargetCharacter(testInput.value);
-    if (char) loadCharacter(char, context);
+    const { char, context } = extractTargetCharacter(testInput.value);
+    if (char) void loadCharacter(char, context);
   });
 }
 
 playPauseBtn.addEventListener("click", togglePlayPause);
-speakBtn.addEventListener("click", () => speakOnce(window.GWX.buildSpeechText(currentChar, currentContext)));
+speakBtn.addEventListener("click", () => speakOnce(buildSpeechText(currentChar, currentContext)));
+
+// 模块作用域不再自动挂全局,显式暴露 e2e 测试钩子(headless 无麦克风)。
+window.loadCharacter = loadCharacter;
 
 setupVoiceInput();
 setupTestInput();
