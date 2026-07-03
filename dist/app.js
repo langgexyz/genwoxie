@@ -8,6 +8,8 @@
 //   translate(PADDING, BOARD-PADDING) 后 scale(SCALE, -SCALE),之后都在字面坐标里画。
 import { extractTargetCharacter, buildSpeechText } from "./extract.js";
 import { loadCharacterData } from "./chardata.js";
+import { HoldRecorder, recordingSupported } from "./recorder.js";
+import { probeUnderstandApi, requestUnderstand } from "./understand.js";
 const BOARD = 640;
 const PADDING = 50;
 const SCALE = (BOARD - PADDING * 2) / 1024;
@@ -259,7 +261,68 @@ async function loadCharacter(char, context = "") {
     speakOnce(buildSpeechText(char, context));
     void playDemo();
 }
-function setupVoiceInput() {
+const MIC_IDLE_LABEL = "按住说要写的字";
+// 语音输入按可用性选引擎:录音+云端理解(主) -> Web Speech(降级) -> 禁用+打字框。
+// 决策记录见 docs/tech/voice-pipeline-research.md 第 1 节降级链。
+async function setupVoiceInput() {
+    if (recordingSupported() && (await probeUnderstandApi())) {
+        setupRecorderInput();
+        return;
+    }
+    setupSpeechRecognitionInput();
+}
+// 主引擎:按住录音,松手发理解服务,拿 {char, context} 进主循环。
+function setupRecorderInput() {
+    const recorder = new HoldRecorder();
+    let holding = false;
+    const startListening = (event) => {
+        event.preventDefault();
+        if (holding)
+            return;
+        holding = true;
+        micBtn.classList.add("is-listening");
+        micLabel.textContent = "在听…";
+        recorder.start().catch(() => {
+            holding = false;
+            micBtn.classList.remove("is-listening");
+            micLabel.textContent = "麦克风用不了，检查一下授权";
+        });
+    };
+    const stopListening = () => {
+        if (!holding)
+            return;
+        holding = false;
+        micBtn.classList.remove("is-listening");
+        micLabel.textContent = "在想…";
+        void finishRecording();
+    };
+    async function finishRecording() {
+        try {
+            const wav = await recorder.stop();
+            if (!wav)
+                return; // 误触/太短,静默复位
+            const { char, context } = await requestUnderstand(wav);
+            if (char) {
+                await loadCharacter(char, context);
+            }
+            else {
+                speakOnce("没听清要写哪个字，再说一遍吧。");
+            }
+        }
+        catch {
+            speakOnce("网络好像不太好，等一下再试吧。");
+        }
+        finally {
+            micLabel.textContent = MIC_IDLE_LABEL;
+        }
+    }
+    micBtn.addEventListener("pointerdown", startListening);
+    micBtn.addEventListener("pointerup", stopListening);
+    micBtn.addEventListener("pointercancel", stopListening);
+    micBtn.addEventListener("pointerleave", stopListening);
+}
+// 降级引擎:浏览器 Web Speech(Edge/海外 Chrome 可用,大陆 Chrome 不可用)。
+function setupSpeechRecognitionInput() {
     const SpeechRecognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
     if (!SpeechRecognitionCtor) {
         micBtn.disabled = true;
@@ -290,7 +353,7 @@ function setupVoiceInput() {
             return;
         holding = false;
         micBtn.classList.remove("is-listening");
-        micLabel.textContent = "按住说要写的字";
+        micLabel.textContent = MIC_IDLE_LABEL;
         recognition.stop();
     };
     micBtn.addEventListener("pointerdown", startListening);
@@ -308,7 +371,7 @@ function setupVoiceInput() {
     });
     recognition.addEventListener("error", () => {
         micBtn.classList.remove("is-listening");
-        micLabel.textContent = "按住说要写的字";
+        micLabel.textContent = MIC_IDLE_LABEL;
         holding = false;
     });
 }
@@ -329,5 +392,5 @@ playPauseBtn.addEventListener("click", togglePlayPause);
 speakBtn.addEventListener("click", () => speakOnce(buildSpeechText(currentChar, currentContext)));
 // 模块作用域不再自动挂全局,显式暴露 e2e 测试钩子(headless 无麦克风)。
 window.loadCharacter = loadCharacter;
-setupVoiceInput();
+void setupVoiceInput();
 setupTestInput();
