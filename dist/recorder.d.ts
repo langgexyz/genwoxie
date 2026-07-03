@@ -1,6 +1,5 @@
 export declare function recordingSupported(): boolean;
 export declare class HoldRecorder {
-    private stream;
     private session;
     private active;
     private starting;
