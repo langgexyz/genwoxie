@@ -61,6 +61,12 @@ await page.evaluate(() => {
 });
 await mic.dispatchEvent("pointerdown");
 await page.waitForSelector("#micBtn[data-recording]", { timeout: 10000 });
+// 幂等:上一轮写了城,这次按下即全新开始——写字区已清空、次级控件收起
+const pressReset = await page.evaluate(() => ({
+  controlsHidden: document.querySelector<HTMLElement>("#boardControls")?.hidden === true,
+  hintHidden: document.querySelector<HTMLElement>("#boardHint")?.hidden === true,
+}));
+const inkDuringListen = await inkRatio(page);
 await page.waitForTimeout(700);
 await mic.dispatchEvent("pointerup");
 await page.waitForFunction(() => (window.lastSpeech ?? "").includes("网络"), undefined, {
@@ -121,7 +127,7 @@ await page.screenshot({ path: `${out}/26-corrected.png` });
 
 console.log(
   JSON.stringify(
-    { unexpectedErrors, echoSpeech, ink, title, labelRestored, correctionSpeech },
+    { unexpectedErrors, echoSpeech, ink, title, labelRestored, correctionSpeech, pressReset, inkDuringListen },
     null,
     2,
   ),
@@ -133,6 +139,9 @@ const ok =
   ink > 0.03 &&
   title.includes("城") &&
   labelRestored === "按住说要写的字" &&
-  correctionSpeech === "听错啦，是城，小城夏天的城";
+  correctionSpeech === "听错啦，是城，小城夏天的城" &&
+  pressReset.controlsHidden &&
+  pressReset.hintHidden &&
+  inkDuringListen === 0;
 await browser.close();
 process.exit(ok ? 0 : 1);

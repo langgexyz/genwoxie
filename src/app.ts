@@ -270,11 +270,20 @@ function resetToIdle(): void {
   clearBoard();
   demoState = "idle";
   setPlayGlyph("play");
-  // 回到空态:唯一动作重新变成"按住说话",次级控件收起、引导语回来;
-  // 麦克风呼吸脉动(动画召唤,孩子不识字,靠动效知道按哪)
-  boardHint.hidden = false;
+  // 回到空态:唯一动作重新变成"按住说话",次级控件收起、引导语回来
   boardControls.hidden = true;
+  showIdleGuidance();
+}
+
+// 空态引导(提示语+麦克风呼吸脉动)统一开关,避免两者状态漂移
+function showIdleGuidance(): void {
+  boardHint.hidden = false;
   micBtn.classList.add("is-beckoning");
+}
+
+function hideIdleGuidance(): void {
+  boardHint.hidden = true;
+  micBtn.classList.remove("is-beckoning");
 }
 
 // 回声消歧:识别到字后把语境词读回去(「城,小城夏天的城」)。孩子不认识
@@ -302,9 +311,8 @@ async function loadCharacter(char: string, context = "", speechPrefix = ""): Pro
   document.title = `${char} · 跟我写`;
   buildTimeline(data);
   // 格子里有字了,"再看/再听"才有意义,此时才亮出次级控件
-  boardHint.hidden = true;
+  hideIdleGuidance();
   boardControls.hidden = false;
-  micBtn.classList.remove("is-beckoning");
   speakOnce(speechPrefix + buildSpeechText(char, context));
   void playDemo();
 }
@@ -331,7 +339,12 @@ function setupRecorderInput(): void {
     event.preventDefault();
     if (holding) return;
     holding = true;
-    auditAbort?.abort(); // 新一轮提问,不再理会上一轮的复核
+    // 按下即全新开始(幂等):上一轮的动画/语音/纠错监听全部停掉,写字区清空
+    auditAbort?.abort();
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    resetToIdle();
+    hideIdleGuidance(); // 录音中,不显示空态引导
+    thinkingDots.hidden = true;
     micBtn.classList.add("is-listening");
     // 拿麦克风是异步的(首次授权/高负载可达秒级),真开录前显示"准备…",
     // 就绪才切"在听…"——否则孩子提前开口丢字头。data-recording 同时是
@@ -347,6 +360,7 @@ function setupRecorderInput(): void {
       .catch(() => {
         holding = false;
         micBtn.classList.remove("is-listening");
+        showIdleGuidance(); // 回空态视觉
         micLabel.textContent = "麦克风用不了，检查一下授权";
         // 孩子不识字,拒权也要有声音反馈
         speakOnce("麦克风没打开，请大人来帮忙点一下允许。");
@@ -357,6 +371,7 @@ function setupRecorderInput(): void {
     if (!holding) return;
     holding = false;
     micBtn.classList.remove("is-listening");
+    micBtn.classList.add("is-thinking");
     delete micBtn.dataset["recording"];
     micLabel.textContent = "在想…";
     void finishRecording();
@@ -394,8 +409,9 @@ function setupRecorderInput(): void {
       speakOnce("网络好像不太好，等一下再试吧。");
     } finally {
       thinkingDots.hidden = true;
+      micBtn.classList.remove("is-thinking");
       // 没写出字(误触/没听清/网络错)则空态引导回来
-      if (demoState === "idle") boardHint.hidden = false;
+      if (demoState === "idle") showIdleGuidance();
       micLabel.textContent = MIC_IDLE_LABEL;
     }
   }
