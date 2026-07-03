@@ -73,6 +73,34 @@ export function parseArbiterVerdict(text: string): ArbiterVerdict | null {
   }
 }
 
+// 16-bit PCM wav 的静音检测:峰值与 RMS 双阈值(标定见 understandAudio 注释)。
+// 解析失败(非标准 RIFF)按"有声"放行,守卫只在确凿静音时拦。
+export function isSilentWav(buf: Uint8Array): boolean {
+  const idx = findDataChunk(buf);
+  if (idx < 0) return false;
+  const view = new DataView(buf.buffer, buf.byteOffset + idx, buf.byteLength - idx);
+  const n = Math.floor(view.byteLength / 2);
+  if (n === 0) return true;
+  let peak = 0;
+  let sumSq = 0;
+  for (let i = 0; i < n; i++) {
+    const v = Math.abs(view.getInt16(i * 2, true));
+    if (v > peak) peak = v;
+    sumSq += v * v;
+  }
+  const rms = Math.sqrt(sumSq / n);
+  return peak < 2500 && rms < 150;
+}
+
+function findDataChunk(buf: Uint8Array): number {
+  for (let i = 12; i + 8 < buf.length; i++) {
+    if (buf[i] === 0x64 && buf[i + 1] === 0x61 && buf[i + 2] === 0x74 && buf[i + 3] === 0x61) {
+      return i + 8;
+    }
+  }
+  return -1;
+}
+
 // GPT 裁判失败时的保守回退:两路一致才敢用 omni 结果;分歧时宁可返回空
 // (前端引导"再说一遍")也不猜——孩子无法自判错误,准确率优先(user 拍板)。
 export function fallbackWithoutJudge(transcript: string, omni: UnderstandResult): UnderstandResult {
@@ -206,6 +234,13 @@ export async function understandAudio(
   // 默认两路混合(user 实测 28.7s 后拍板弃全同步三路):ASR 转写作参考喂给
   // omni 互相印证(eval 17/18,p50 1.7s,噪音例可修对)。配了 arbiter 才升级
   // 为三路全同步终审(代码保留,配置驱动)。
+  // 静音守卫:按音频能量判定,不给模型对空音频幻觉的机会(语料回测实证:
+  // 静音被猜成"大")。用真实语料标定:静音 rms<=42/peak<=1134,最弱真语音
+  // (超短单字)rms=491/peak=3986,阈值取中留足余量。注意不能用"ASR 转写为空"
+  // 当守卫——超短真语音 ASR 也会返回空,但 omni 听得见(语料回测误杀实证)。
+  if (format === "wav" && isSilentWav(Buffer.from(audioB64, "base64"))) {
+    return { result: { char: "", context: "" }, transcript: "", arbitrated: false };
+  }
   const transcript = (await transcribe(audioB64, format, cfg).catch(() => "")).trim().slice(0, 100);
   const omniResult = await omniListen(audioB64, format, cfg, transcript, priorTranscript);
 
