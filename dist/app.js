@@ -305,6 +305,24 @@ async function fadeOutBoard() {
     }
     clearBoard();
 }
+// 长按是唯一手势,浏览器抢手势是"在听"间歇消失的根源:长按弹系统菜单
+// (contextmenu -> pointercancel)、手指滑出按钮边缘(pointerleave)都会把
+// 录音半路掐掉。对策:阻断 contextmenu + 捕获指针(滑出不算离开),松手在
+// 哪都算松手(pointerup 挂 window,兜住捕获不生效的引擎)。
+function bindHoldToTalk(start, stop) {
+    micBtn.addEventListener("contextmenu", (event) => event.preventDefault());
+    micBtn.addEventListener("pointerdown", (event) => {
+        try {
+            micBtn.setPointerCapture(event.pointerId);
+        }
+        catch {
+            // 指针已失效(极端时序):不捕获也能走完,只是滑出边缘会提前松手
+        }
+        start(event);
+    });
+    window.addEventListener("pointerup", stop);
+    micBtn.addEventListener("pointercancel", stop);
+}
 function resetToIdle() {
     runToken++;
     brush.stop();
@@ -486,10 +504,7 @@ function setupRecorderInput() {
             }
         }
     }
-    micBtn.addEventListener("pointerdown", startListening);
-    micBtn.addEventListener("pointerup", stopListening);
-    micBtn.addEventListener("pointercancel", stopListening);
-    micBtn.addEventListener("pointerleave", stopListening);
+    bindHoldToTalk(startListening, stopListening);
 }
 // 降级引擎:浏览器 Web Speech(Edge/海外 Chrome 可用,大陆 Chrome 不可用)。
 function setupSpeechRecognitionInput() {
@@ -526,10 +541,7 @@ function setupSpeechRecognitionInput() {
         micLabel.textContent = MIC_IDLE_LABEL;
         recognition.stop();
     };
-    micBtn.addEventListener("pointerdown", startListening);
-    micBtn.addEventListener("pointerup", stopListening);
-    micBtn.addEventListener("pointercancel", stopListening);
-    micBtn.addEventListener("pointerleave", stopListening);
+    bindHoldToTalk(startListening, stopListening);
     recognition.addEventListener("result", (event) => {
         const { char, context } = extractTargetCharacter(event.results[0][0].transcript);
         if (char) {
