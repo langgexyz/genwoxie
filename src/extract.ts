@@ -1,5 +1,4 @@
 // 话术提取:从孩子的一句话里取出要写的目标字 + 可用于消歧的语境词。
-// 浏览器 <script> 挂 window.GWX,node 单测走 module.exports,无其他依赖。
 //
 // 返回 { char, context }:
 //   char    要写的单个汉字,取不到为 ""
@@ -11,6 +10,11 @@
 //   3. 「写(一个)X」        「写一个大」「怎么写城」
 //   4. 「X(字)(怎么)写」    「城怎么写」「飞机怎么写」(词取首字,整词当语境)
 //   5. 兜底:第一个非功能词汉字
+
+export interface ExtractResult {
+  char: string;
+  context: string;
+}
 
 const FILLER_PREFIX = /^(?:就是|那个|这个|一个|请|帮我|我想|我要)+/u;
 
@@ -26,15 +30,15 @@ const P_POSSESSIVE_END = /(\p{Script=Han}{1,6})的(\p{Script=Han})(?:字)?[^\p{S
 const P_WRITE_THEN_CHAR = /写(?:一个|一下|个|下)?([^\P{Script=Han}字])/u;
 const P_WORD_THEN_WRITE = /([^\P{Script=Han}怎么咋如何样写字]{1,4})(?:字)?(?:怎么|咋|如何|怎样)?写/u;
 
-function stripFiller(word) {
+function stripFiller(word: string): string {
   return word.replace(FILLER_PREFIX, "");
 }
 
-function extractTargetCharacter(text) {
-  const clean = (text || "").trim().replace(COMMAND_PREFIX, "");
+export function extractTargetCharacter(text: string): ExtractResult {
+  const clean = text.trim().replace(COMMAND_PREFIX, "");
   if (!clean) return { char: "", context: "" };
 
-  let m = clean.match(P_POSSESSIVE_WRITE) || clean.match(P_POSSESSIVE_END);
+  let m = clean.match(P_POSSESSIVE_WRITE) ?? clean.match(P_POSSESSIVE_END);
   if (m) return { char: m[2], context: stripFiller(m[1]) };
 
   m = clean.match(P_WRITE_THEN_CHAR);
@@ -43,7 +47,7 @@ function extractTargetCharacter(text) {
   m = clean.match(P_WORD_THEN_WRITE);
   if (m) {
     const word = stripFiller(m[1]);
-    if (word) return { char: word[0], context: word.length > 1 ? word : "" };
+    if (word) return { char: word.charAt(0), context: word.length > 1 ? word : "" };
   }
 
   for (const c of clean) {
@@ -53,13 +57,8 @@ function extractTargetCharacter(text) {
 }
 
 // 播报文本:有语境词读「城,小城的城」(顺带解决多音字),没有就只读字。
-function buildSpeechText(char, context) {
+export function buildSpeechText(char: string, context: string): string {
   if (!char) return "";
   if (context && context !== char) return `${char}，${context}的${char}`;
   return char;
 }
-
-const GWX = { extractTargetCharacter, buildSpeechText };
-
-if (typeof window !== "undefined") window.GWX = GWX;
-if (typeof module !== "undefined" && module.exports) module.exports = GWX;
