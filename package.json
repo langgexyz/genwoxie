@@ -5,8 +5,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json",
-    "test": "npm run build && node --experimental-strip-types --test tests/extract.test.ts",
-    "e2e": "node --experimental-strip-types e2e/smoke.ts && node --experimental-strip-types e2e/test-input.ts"
+    "dev": "node --experimental-strip-types server/dev.ts",
+    "test": "npm run build && node --experimental-strip-types --test tests/extract.test.ts tests/wav.test.ts tests/understand-parse.test.ts",
+    "e2e": "node --experimental-strip-types e2e/smoke.ts && node --experimental-strip-types e2e/test-input.ts",
+    "e2e:voice": "node --experimental-strip-types e2e/voice.ts"
   },
   "devDependencies": {
     "@types/node": "^22",

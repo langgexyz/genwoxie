@@ -12,5 +12,5 @@
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["src", "tests", "e2e"]
+  "include": ["src", "tests", "e2e", "server"]
 }
