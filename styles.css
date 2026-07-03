@@ -16,8 +16,11 @@
 
 body {
   height: 100vh;
+  height: 100dvh; /* iOS 动态地址栏:100vh 会比可视区高,按钮被咬掉 */
   margin: 0;
   overflow: hidden;
+  overscroll-behavior: none; /* 按住说话时禁橡皮筋 */
+  -webkit-tap-highlight-color: transparent;
   color: var(--ink);
   background: linear-gradient(135deg, #f5f8fb 0%, #eef5f4 52%, #faf5ec 100%);
 }
@@ -28,6 +31,10 @@ button {
   cursor: pointer;
   color: #fff;
   background: var(--accent);
+  /* 按住说话是长按交互:禁 iOS 长按放大镜/文本选择弹出 */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 button:disabled {
@@ -38,7 +45,10 @@ button:disabled {
 .app {
   display: grid;
   height: 100vh;
+  height: 100dvh;
+  /* 刘海屏安全区:底部留出 home 条,别压住麦克风按钮 */
   padding: 16px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
 }
 
 .workbench {
@@ -290,11 +300,20 @@ button:disabled {
 @media (max-width: 760px) {
   .app {
     padding: 10px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
   }
 
   .workbench {
+    /* 窄高屏:内容组(字帖+按钮)垂直居中,不再上下拉伸留出大片空白 */
+    justify-content: center;
     padding: 12px;
     gap: 12px;
+  }
+
+  .practice-shell {
+    flex: 0 0 auto;
+    /* 底部留出绝对定位的播放/喇叭控件的位置 */
+    padding: 14px 0 96px;
   }
 
   #writingBoard {
