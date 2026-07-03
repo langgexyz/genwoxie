@@ -17,32 +17,41 @@
 
 ## 运行
 
-纯静态页面，无需构建：
+页面是纯静态的（构建产物 `dist/` 已提交，clone 即 serve）：
 
 ```
 python3 -m http.server 8731
 # 浏览器打开 http://localhost:8731
 ```
 
+改源码后重新构建（源码 TypeScript strict，`src/` → `dist/`）：
+
+```
+npm install
+npm run build    # tsc 直出原生 ES modules,无打包器
+npm run check    # 全量类型检查(含 tests/ e2e/)
+```
+
 语音输入依赖浏览器的 Web Speech API（`SpeechRecognition`），Chrome / Edge 支持最好。
 
 ## 技术
 
-- 字形数据：[hanzi-writer-data](https://github.com/chanind/hanzi-writer-data)（真实楷体轮廓 + 笔画中线，覆盖全量常用字）。自己 fetch 按需拉（`chardata.js`），多 CDN 源自动换源 + localStorage 缓存（查过的字离线可用），不引 hanzi-writer 库本身。
-- 话术提取：`extract.js` 纯函数（浏览器/node 双端），从整句话里取目标字 + 语境词，带单测表。
+- 字形数据：[hanzi-writer-data](https://github.com/chanind/hanzi-writer-data)（真实楷体轮廓 + 笔画中线，覆盖全量常用字）。自己 fetch 按需拉（`src/chardata.ts`），多 CDN 源自动换源 + localStorage 缓存（查过的字离线可用），不引 hanzi-writer 库本身。
+- 话术提取：`src/extract.ts` 纯函数，从整句话里取目标字 + 语境词，带单测表。
 - 毛笔渲染：自己用 `<canvas>` 实现 —— 保留楷体轮廓当形状边界裁剪，在边界内用一支会运笔的毛笔沿中线盖墨写出来。字形利落（照抄字帖要形状对），毛笔感在书写过程里。
 - 读音：浏览器自带语音合成 `speechSynthesis`。
-- 无后端、无打包：`index.html` / `app.js` / `extract.js` / `chardata.js` / `styles.css`。
+- 无后端、无打包器：TypeScript strict 源码在 `src/`，`tsc` 直出原生 ES modules 到 `dist/`，`index.html` 一个 `<script type="module">` 入口；测试也全部强类型（`tests/` `e2e/` 均为 `.ts`）。
 
 ## 测试
 
-`e2e/smoke.mjs`：playwright 加载页面，绕过语音直接写一个字，校验毛笔书写动画 / 暂停 / 写完整字留存（数 canvas 墨迹像素确认真写出了字），并截图供人核对版式。
-
 ```
 python3 -m http.server 8731 &
-node e2e/smoke.mjs   # 截图落 .cache/genwoxie/
+npm test        # 单测:先 build 再对 dist/ 跑话术提取用例表
+npm run e2e     # smoke + test-input 两套,截图落 .cache/genwoxie/
 ```
 
-`e2e/test-input.mjs`：校验 `?test` 打字框入口（带 `?test` 参数访问才显示，正式界面不出现），并覆盖：回声消歧播报文本、字形数据 localStorage 缓存、拦掉 CDN 后缓存字离线重写、查不到的字播报「没找到」且画布保持空。
+`e2e/smoke.ts`：playwright 加载页面，绕过语音直接写一个字，校验毛笔书写动画 / 暂停 / 写完整字留存（数 canvas 墨迹像素确认真写出了字），并截图供人核对版式。
 
-`tests/extract.test.mjs`：话术提取单测表（`node --test tests/`），孩子的各种说法 → 期望的目标字 + 语境词，含负向用例。
+`e2e/test-input.ts`：校验 `?test` 打字框入口（带 `?test` 参数访问才显示，正式界面不出现），并覆盖：回声消歧播报文本、字形数据 localStorage 缓存、拦掉 CDN 后缓存字离线加载、查不到的字播报「没找到」且画布保持空。
+
+`tests/extract.test.ts`：话术提取单测表，孩子的各种说法 → 期望的目标字 + 语境词，含负向用例。单测跑构建产物 `dist/`，顺带守住 dist 与源码不漂移。
