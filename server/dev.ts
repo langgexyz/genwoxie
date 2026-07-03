@@ -12,7 +12,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, join, normalize, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { arbitrate, understandAudio, type UnderstandOutcome } from "./understand.ts";
+import { arbitrate, understandAudio, type ArbiterConfig, type UnderstandOutcome } from "./understand.ts";
 
 const PORT = Number(process.env["PORT"] ?? 8731);
 const MOCK = process.env["MOCK_UNDERSTAND"] === "1";
@@ -122,7 +122,7 @@ async function handleUnderstand(req: IncomingMessage, res: ServerResponse): Prom
     const outcome = await understandAudio(audio, format, { apiKey: API_KEY, baseUrl: BASE_URL }, prior);
     const auditor =
       ARBITER_URL && ARBITER_KEY && ARBITER_MODEL
-        ? { baseUrl: ARBITER_URL, apiKey: ARBITER_KEY, model: ARBITER_MODEL }
+        ? { endpoint: ARBITER_URL, apiKey: ARBITER_KEY, model: ARBITER_MODEL }
         : undefined;
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     const willAudit = !!(CORPUS_DIR && auditor && outcome.transcript && outcome.result.char);
@@ -142,7 +142,7 @@ async function saveCorpusAndAudit(
   audioB64: string,
   format: string,
   outcome: UnderstandOutcome,
-  auditor?: { baseUrl: string; apiKey: string; model: string },
+  auditor?: ArbiterConfig,
 ): Promise<void> {
   try {
     await mkdir(CORPUS_DIR, { recursive: true });

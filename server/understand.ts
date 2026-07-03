@@ -24,9 +24,12 @@ export interface UnderstandConfig {
 }
 
 export interface ArbiterConfig {
-  baseUrl: string; // OpenAI Responses 兼容端点,如 https://ccdirect.dev
+  // 完整端点 URL,按后缀识别协议形状:
+  //   .../v1/responses         -> OpenAI Responses(如 ccdirect 的 GPT)
+  //   .../v1/chat/completions  -> OpenAI Chat(如百炼 qwen,同 key 同机房)
+  endpoint: string;
   apiKey: string;
-  model: string; // 如 gpt-5.5
+  model: string; // 校准结论(2026-07-03):qwen3.7-max 关思考,三案例全对且 1.2s
 }
 
 const DEFAULT_MODEL = "qwen3.5-omni-flash";
@@ -108,25 +111,43 @@ async function arbitrateOnce(
     "语境本身是普通人名、或没有语境的裸同音字——即凭这段话无法确定是哪个同音字=weak。" +
     '只返回 JSON:{"char":"单字","context":"语境词,不含 的+目标字","evidence":"strong 或 weak"}';
   try {
-    const res = await fetch(`${cfg.baseUrl}/v1/responses`, {
+    const responsesWire = cfg.endpoint.endsWith("/responses");
+    const body = responsesWire
+      ? { model: cfg.model, input: prompt, stream: false }
+      : {
+          model: cfg.model,
+          messages: [{ role: "user", content: prompt }],
+          stream: false,
+          // DashScope 混合思考模型:裁判任务不需要长思考,关掉省 10 倍延迟
+          // (18s -> 1.2s,校准质量不降);非 DashScope 后端若拒此字段再加开关。
+          enable_thinking: false,
+        };
+    const res = await fetch(cfg.endpoint, {
       method: "POST",
       headers: { Authorization: `Bearer ${cfg.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: cfg.model, input: prompt, stream: false }),
-      signal: AbortSignal.timeout(15000),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20000),
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as {
-      output?: { content?: { type?: string; text?: string }[] }[];
-    };
-    for (const item of data.output ?? []) {
-      for (const c of item.content ?? []) {
-        if (c.type === "output_text" && c.text) {
-          const verdict = parseArbiterVerdict(c.text);
-          if (verdict) return verdict;
+    if (responsesWire) {
+      const data = (await res.json()) as {
+        output?: { content?: { type?: string; text?: string }[] }[];
+      };
+      for (const item of data.output ?? []) {
+        for (const c of item.content ?? []) {
+          if (c.type === "output_text" && c.text) {
+            const verdict = parseArbiterVerdict(c.text);
+            if (verdict) return verdict;
+          }
         }
       }
+      return null;
     }
-    return null;
+    const data = (await res.json()) as {
+      choices?: { message?: { content?: string | null } }[];
+    };
+    const text = data.choices?.[0]?.message?.content ?? "";
+    return text ? parseArbiterVerdict(text) : null;
   } catch {
     return null;
   }
