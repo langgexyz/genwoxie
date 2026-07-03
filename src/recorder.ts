@@ -24,55 +24,80 @@ export function recordingSupported(): boolean {
 
 export class HoldRecorder {
   private stream: MediaStream | null = null;
-  private recorder: MediaRecorder | null = null;
+  // 会话序号:每次按下自增,贯穿整个异步生命周期——慢启动(授权/高负载可达秒级)
+  // 期间用户再次按下时,旧会话在每个 await 后都会发现自己已过期并自我作废,
+  // 否则旧录音器被误当成新一轮的(实测:两轮全部静默流产)。
+  private session = 0;
+  private active: { recorder: MediaRecorder; chunks: Blob[] } | null = null;
   private starting: Promise<void> | null = null;
-  private chunks: Blob[] = [];
 
   // 按下:拿麦克风(首次会弹授权)并开录。授权被拒/无设备会抛,调用方给用户提示。
-  // starting 同步落座:授权弹窗期间用户就松手时,stop() 要能等到 start 完成,
-  // 否则录音器在 stop 之后才启动,变成永不停止的僵尸录音(headless 实测竞态)。
   async start(): Promise<void> {
-    if (this.starting || this.recorder) return; // 已在起/已在录
-    this.starting = this.doStart();
-    try {
-      await this.starting;
-    } finally {
-      this.starting = null;
-    }
-  }
-
-  private async doStart(): Promise<void> {
-    this.stream ??= await navigator.mediaDevices.getUserMedia({ audio: true });
-    this.chunks = [];
-    const mimeType = pickMimeType();
-    this.recorder = new MediaRecorder(this.stream, mimeType ? { mimeType } : undefined);
-    this.recorder.addEventListener("dataavailable", (e) => {
-      if (e.data.size > 0) this.chunks.push(e.data);
-    });
-    this.recorder.start();
-  }
-
-  // 松手:停录并归一成 wav。录得太短(误触)返回 null。
-  async stop(): Promise<Blob | null> {
-    if (this.starting) {
+    const mySession = ++this.session;
+    // 等上一轮的 start 落定再动手(不能早退:早退会让本轮误以为已在录)
+    while (this.starting) {
       try {
-        await this.starting; // 等 start 落定再停,见 start() 注释
+        await this.starting;
       } catch {
-        return null; // 授权被拒等,start 侧已提示
+        // 上一轮的失败不归本轮
       }
     }
-    const recorder = this.recorder;
-    if (!recorder) return null;
-    this.recorder = null;
+    if (mySession !== this.session) return; // 等待期间又有新按下,本轮让位
+    this.abandonActive(); // 上一轮没松手就再按的残留录音器,丢弃
+    const p = this.doStart(mySession);
+    this.starting = p;
+    try {
+      await p;
+    } finally {
+      if (this.starting === p) this.starting = null;
+    }
+  }
+
+  private async doStart(mySession: number): Promise<void> {
+    this.stream ??= await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (mySession !== this.session) return; // 慢启动期间已换轮,不再开录
+    const chunks: Blob[] = []; // 按会话闭包隔离,不与旧会话共享
+    const mimeType = pickMimeType();
+    const recorder = new MediaRecorder(this.stream, mimeType ? { mimeType } : undefined);
+    recorder.addEventListener("dataavailable", (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    });
+    recorder.start();
+    this.active = { recorder, chunks };
+  }
+
+  // 松手:停录并归一成 wav。换轮/太短/没录上返回 null。
+  async stop(): Promise<Blob | null> {
+    const mySession = this.session;
+    if (this.starting) {
+      try {
+        await this.starting; // 等本轮 start 落定,见 start() 注释
+      } catch {
+        return null;
+      }
+    }
+    if (mySession !== this.session) return null; // 等待期间已换轮
+    const active = this.active;
+    this.active = null;
+    if (!active) return null;
 
     await new Promise<void>((resolve) => {
-      recorder.addEventListener("stop", () => resolve(), { once: true });
-      recorder.stop();
+      active.recorder.addEventListener("stop", () => resolve(), { once: true });
+      active.recorder.stop();
     });
-    const raw = new Blob(this.chunks, { type: recorder.mimeType });
-    this.chunks = [];
+    const raw = new Blob(active.chunks, { type: active.recorder.mimeType });
     if (raw.size === 0) return null;
     return this.toWav(raw);
+  }
+
+  private abandonActive(): void {
+    if (!this.active) return;
+    try {
+      this.active.recorder.stop();
+    } catch {
+      // 已经停了就算了
+    }
+    this.active = null;
   }
 
   private async toWav(raw: Blob): Promise<Blob | null> {
