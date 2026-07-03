@@ -224,6 +224,23 @@ button:disabled {
   transform: scale(0.99);
 }
 
+/* 空态呼吸脉动:动画召唤"按我"(孩子不识字,动效即语言);按下/出字后移除 */
+.mic-button.is-beckoning {
+  animation: beckon 2.2s ease-in-out infinite;
+}
+
+@keyframes beckon {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 14px 30px rgb(21 122 110 / 0.28);
+  }
+  50% {
+    transform: scale(1.025);
+    box-shadow: 0 16px 38px rgb(21 122 110 / 0.42);
+  }
+}
+
 .mic-button.is-listening {
   background: var(--listen);
   box-shadow: 0 0 0 0 rgb(226 86 47 / 0.5);

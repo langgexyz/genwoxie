@@ -1,6 +1,34 @@
 // 理解服务客户端:wav 录音 -> POST api/understand -> {char, context}。
 // API 路径用相对形式:根路径与反代子路径(如 ccdirect.dev/xie/)部署都成立。
 // 服务端(dev server / FC 函数)持有模型 key,前端只见业务 JSON。
+// 轮询后台复核:发现纠错(agree=false 且给了新字)返回之,同意/超时/出错返回 null。
+// 孩子无感等待,不占同步链路延迟。
+export async function pollAuditCorrection(auditId, signal) {
+    for (let i = 0; i < 15; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        if (signal.aborted)
+            return null;
+        try {
+            const res = await fetch(`api/audit?id=${encodeURIComponent(auditId)}`, { signal });
+            if (!res.ok)
+                return null;
+            const data = (await res.json());
+            if (data["status"] === "pending")
+                continue;
+            if (data["agree"] === false && typeof data["char"] === "string" && data["char"]) {
+                return {
+                    char: data["char"],
+                    context: typeof data["context"] === "string" ? data["context"] : "",
+                };
+            }
+            return null;
+        }
+        catch {
+            return null;
+        }
+    }
+    return null;
+}
 // 页面加载时探测理解服务是否在(纯静态部署无后端时走 Web Speech 降级链)。
 export async function probeUnderstandApi(timeoutMs = 1500) {
     try {
@@ -27,6 +55,7 @@ export async function requestUnderstand(wav) {
     return {
         char: typeof data["char"] === "string" ? data["char"] : "",
         context: typeof data["context"] === "string" ? data["context"] : "",
+        auditId: typeof data["auditId"] === "string" ? data["auditId"] : undefined,
     };
 }
 async function blobToBase64(blob) {

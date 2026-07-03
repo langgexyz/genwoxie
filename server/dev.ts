@@ -34,6 +34,21 @@ if (!MOCK && (!API_KEY || !BASE_URL)) {
   process.exit(1);
 }
 
+// 复核结果表:auditId(=语料时间戳) -> 结论;前端轮询取,容量封顶防泄漏。
+type AuditEntry =
+  | { status: "pending" }
+  | { status: "done"; agree: boolean | null; char?: string; context?: string };
+const audits = new Map<string, AuditEntry>();
+const AUDITS_MAX = 500;
+
+function setAudit(id: string, entry: AuditEntry): void {
+  if (audits.size >= AUDITS_MAX) {
+    const oldest = audits.keys().next().value;
+    if (oldest) audits.delete(oldest);
+  }
+  audits.set(id, entry);
+}
+
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -86,19 +101,23 @@ async function handleUnderstand(req: IncomingMessage, res: ServerResponse): Prom
     return;
   }
   if (MOCK) {
-    sendJson(res, 200, { char: "城", context: "小城夏天" });
+    // mock 也带 auditId,/api/audit 默认回 agree,e2e 可 route 覆盖模拟纠错
+    sendJson(res, 200, { char: "城", context: "小城夏天", auditId: "mock-audit" });
     return;
   }
   try {
     // 同步链路只走两路(ASR+omni,约 2s);GPT 不进同步路径(实测经中转 3-9s,
     // user 拍板:两路同步 + GPT 异步复核)。
     const outcome = await understandAudio(audio, format, { apiKey: API_KEY, baseUrl: BASE_URL });
-    sendJson(res, 200, outcome.result);
     const auditor =
       ARBITER_URL && ARBITER_KEY && ARBITER_MODEL
         ? { baseUrl: ARBITER_URL, apiKey: ARBITER_KEY, model: ARBITER_MODEL }
         : undefined;
-    if (CORPUS_DIR) void saveCorpusAndAudit(audio, format, outcome, auditor);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const willAudit = !!(CORPUS_DIR && auditor && outcome.transcript && outcome.result.char);
+    if (willAudit) setAudit(stamp, { status: "pending" });
+    sendJson(res, 200, willAudit ? { ...outcome.result, auditId: stamp } : outcome.result);
+    if (CORPUS_DIR) void saveCorpusAndAudit(stamp, audio, format, outcome, auditor);
   } catch (e) {
     console.error("error: understand 调用失败:", e instanceof Error ? e.message : e);
     sendJson(res, 502, { error: "模型服务暂时不可用" });
@@ -108,13 +127,13 @@ async function handleUnderstand(req: IncomingMessage, res: ServerResponse): Prom
 // 语料落盘 + GPT 异步复核:已回给用户后 GPT 后台审每一条("两路同错"从沉默
 // 错误变成语料里 suspect=true 的待审数据,GPT 100% 参与但零交互延迟)。
 async function saveCorpusAndAudit(
+  stamp: string,
   audioB64: string,
   format: string,
   outcome: UnderstandOutcome,
   auditor?: { baseUrl: string; apiKey: string; model: string },
 ): Promise<void> {
   try {
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     await mkdir(CORPUS_DIR, { recursive: true });
     await writeFile(join(CORPUS_DIR, `${stamp}.${format}`), Buffer.from(audioB64, "base64"));
 
@@ -126,6 +145,15 @@ async function saveCorpusAndAudit(
           ? { mode: "async", agree: true }
           : { mode: "async", agree: false, suspect: true, gpt: verdict }
         : { mode: "async", agree: null };
+      // 结论进内存表,前端轮询到后播报提示并切字
+      setAudit(
+        stamp,
+        verdict
+          ? verdict.char === outcome.result.char
+            ? { status: "done", agree: true }
+            : { status: "done", agree: false, char: verdict.char, context: verdict.context }
+          : { status: "done", agree: null },
+      );
     }
     await writeFile(
       join(CORPUS_DIR, `${stamp}.json`),
@@ -172,6 +200,15 @@ createServer((req, res) => {
   const pathname = new URL(req.url ?? "/", `http://localhost:${PORT}`).pathname;
   if (req.method === "GET" && pathname === "/api/health") {
     sendJson(res, 200, { ok: true, mock: MOCK });
+    return;
+  }
+  if (req.method === "GET" && pathname === "/api/audit") {
+    const id = new URL(req.url ?? "/", `http://localhost:${PORT}`).searchParams.get("id") ?? "";
+    if (MOCK) {
+      sendJson(res, 200, { status: "done", agree: true });
+      return;
+    }
+    sendJson(res, 200, audits.get(id) ?? { status: "unknown" });
     return;
   }
   if (req.method === "POST" && pathname === "/api/understand") {
