@@ -8,7 +8,7 @@
 //   PORT 可选,默认 8731
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, join, normalize, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,6 +19,9 @@ const MOCK = process.env["MOCK_UNDERSTAND"] === "1";
 const API_KEY = process.env["DASHSCOPE_API_KEY"] ?? "";
 const BASE_URL = process.env["DASHSCOPE_BASE_URL"] ?? "";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// 语料收集:设了 CORPUS_DIR 就把每次真实请求的音频+识别结果落盘,
+// 作为回放测试/eval 语料(童声正确率没有公开数据,自采语料是核心资产)。
+const CORPUS_DIR = process.env["CORPUS_DIR"] ?? "";
 const MAX_BODY = 15 * 1024 * 1024;
 
 if (!MOCK && (!API_KEY || !BASE_URL)) {
@@ -83,10 +86,31 @@ async function handleUnderstand(req: IncomingMessage, res: ServerResponse): Prom
     return;
   }
   try {
-    sendJson(res, 200, await understandAudio(audio, format, { apiKey: API_KEY, baseUrl: BASE_URL }));
+    const result = await understandAudio(audio, format, { apiKey: API_KEY, baseUrl: BASE_URL });
+    if (CORPUS_DIR) void saveCorpus(audio, format, result);
+    sendJson(res, 200, result);
   } catch (e) {
     console.error("error: understand 调用失败:", e instanceof Error ? e.message : e);
     sendJson(res, 502, { error: "模型服务暂时不可用" });
+  }
+}
+
+// 语料落盘:同名 wav+json 一对;expected 字段初值取模型输出,人工纠错时改 json 即可。
+async function saveCorpus(
+  audioB64: string,
+  format: string,
+  result: { char: string; context: string },
+): Promise<void> {
+  try {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    await mkdir(CORPUS_DIR, { recursive: true });
+    await writeFile(join(CORPUS_DIR, `${stamp}.${format}`), Buffer.from(audioB64, "base64"));
+    await writeFile(
+      join(CORPUS_DIR, `${stamp}.json`),
+      JSON.stringify({ expected: result.char, model: result, format, savedAt: stamp }, null, 2),
+    );
+  } catch (e) {
+    console.error("warning: 语料落盘失败(不影响主流程):", e instanceof Error ? e.message : e);
   }
 }
 
