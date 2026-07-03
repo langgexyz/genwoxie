@@ -4,8 +4,10 @@
 # 流程 = 服务器 git pull --ff-only + compose up -d + 容器内健康检查 + 线上健康检查。
 set -euo pipefail
 
-echo "== 服务器拉取并重建容器"
-ssh ccdirect 'cd /opt/genwoxie && git pull --ff-only && cd deploy && docker compose up -d --wait 2>/dev/null || docker compose up -d'
+echo "== 服务器拉取并重启容器"
+# 代码是 bind mount,compose 配置没变时 up -d 不会重建容器,老进程仍跑老代码——
+# 必须显式 restart(实证:混合识别部署后线上仍跑旧逻辑)。
+ssh ccdirect 'cd /opt/genwoxie && git pull --ff-only && cd deploy && docker compose up -d && docker compose restart web'
 
 echo "== 容器健康(服务器本地)"
 ssh ccdirect 'sleep 2 && curl -sf http://127.0.0.1:8850/api/health'
