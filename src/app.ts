@@ -397,7 +397,7 @@ function setupRecorderInput(): void {
       }
       // 弱证据(一音多字,判不准):主动追问,下一句将与这一句合并消歧
       followUpOf = auditId;
-      speakOnce("这个音有好几个字。再按住，告诉我一个用它的词，比如康熙皇帝的熙。");
+      speakOnce("这个音有好几个字。再按住，用一个有名的词说它，比如康熙皇帝的熙。");
     });
   }
 
