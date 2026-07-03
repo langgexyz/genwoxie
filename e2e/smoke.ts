@@ -29,12 +29,25 @@ page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 await page.goto(`${BASE_URL}/index.html`, { waitUntil: "networkidle" });
 await page.screenshot({ path: `${out}/01-initial.png` });
 
+// 空态契约:引导语可见,次级控件(再看/再听)不出现——首屏唯一动作是按住说话
+const emptyState = await page.evaluate(() => ({
+  hintVisible: !document.querySelector<HTMLElement>("#boardHint")?.hidden,
+  controlsHidden: document.querySelector<HTMLElement>("#boardControls")?.hidden === true,
+}));
+
 await page.evaluate(() => window.loadCharacter("城"));
 
 // 等动画真正开始(按钮进入暂停态),此刻截图看「演示中」+ 暂停双竖条
 await page.waitForSelector("#playPauseBtn.is-pause", { timeout: 8000 });
 await page.waitForTimeout(900);
 await page.screenshot({ path: `${out}/02-animating.png` });
+
+// 出字态契约:引导语退场,带文字标签的次级控件出现
+const loadedState = await page.evaluate(() => ({
+  hintHidden: document.querySelector<HTMLElement>("#boardHint")?.hidden === true,
+  controlsVisible: document.querySelector<HTMLElement>("#boardControls")?.hidden === false,
+  captions: [...document.querySelectorAll(".control-caption")].map((el) => el.textContent),
+}));
 
 // 点暂停:按钮应翻回播放三角(is-pause 移除)
 await page.click("#playPauseBtn");
@@ -58,8 +71,19 @@ const micDisabled = await page.evaluate(
   () => document.querySelector<HTMLButtonElement>("#micBtn")?.disabled,
 );
 
-console.log(JSON.stringify({ errors, ink, title, pausedShowsPlay, micDisabled }, null, 2));
+console.log(
+  JSON.stringify({ errors, ink, title, pausedShowsPlay, micDisabled, emptyState, loadedState }, null, 2),
+);
 
-const ok = errors.length === 0 && ink > 0.03 && title.includes("城") && pausedShowsPlay;
+const ok =
+  errors.length === 0 &&
+  ink > 0.03 &&
+  title.includes("城") &&
+  pausedShowsPlay &&
+  emptyState.hintVisible &&
+  emptyState.controlsHidden &&
+  loadedState.hintHidden &&
+  loadedState.controlsVisible &&
+  loadedState.captions.join(",") === "再写一遍,再读一遍";
 await browser.close();
 process.exit(ok ? 0 : 1);
