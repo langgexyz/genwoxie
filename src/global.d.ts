@@ -19,7 +19,8 @@ interface Window {
   SpeechRecognition?: new () => GwxSpeechRecognition;
   webkitSpeechRecognition?: new () => GwxSpeechRecognition;
 
-  // 测试钩子(e2e 用,headless 没麦克风/听不到 TTS):
+  // 测试钩子(e2e 用,headless 没麦克风/听不到 TTS/听不到音效):
   loadCharacter: (char: string, context?: string) => Promise<void>;
   lastSpeech?: string;
+  brushLevel?: number;
 }
