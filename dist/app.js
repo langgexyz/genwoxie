@@ -301,13 +301,16 @@ async function setupVoiceInput() {
 function setupRecorderInput() {
     const recorder = new HoldRecorder();
     let holding = false;
+    let round = 0; // 轮次令牌:每次按下自增,迟到的上一轮结果按令牌作废
     let auditAbort = null;
     const startListening = (event) => {
         event.preventDefault();
         if (holding)
             return;
         holding = true;
-        // 按下即全新开始(幂等):上一轮的动画/语音/纠错监听全部停掉,写字区清空
+        // 按下即全新开始(幂等):上一轮的动画/语音/纠错监听全部停掉,写字区清空,
+        // 上一轮仍在途的识别结果凭轮次令牌作废
+        round++;
         auditAbort?.abort();
         if ("speechSynthesis" in window)
             window.speechSynthesis.cancel();
@@ -341,9 +344,9 @@ function setupRecorderInput() {
             return;
         holding = false;
         micBtn.classList.remove("is-listening");
-        micBtn.classList.add("is-thinking");
         delete micBtn.dataset["recording"];
-        micLabel.textContent = "在想…";
+        // 按钮语义=说话的入口,没有"在想"态:松手即回待命,思考由写字区墨点表达
+        micLabel.textContent = MIC_IDLE_LABEL;
         void finishRecording();
     };
     // 后台复核纠错闭环:GPT 不同意已写的字时,动画+语音切到对的字
@@ -361,14 +364,19 @@ function setupRecorderInput() {
         });
     }
     async function finishRecording() {
+        const myRound = round; // 本轮令牌:期间用户再按下则一切结果作废
         // 在想:墨点起伏动画(空态引导先让位),孩子不识字,动效即"我在处理"
         boardHint.hidden = true;
         thinkingDots.hidden = false;
         try {
             const wav = await recorder.stop();
+            if (myRound !== round)
+                return; // 新一轮已开始,本轮作废
             if (!wav)
                 return; // 误触/太短,静默复位(finally 恢复空态引导)
             const { char, context, auditId } = await requestUnderstand(wav);
+            if (myRound !== round)
+                return; // 结果迟到,丢弃,不打扰新一轮
             if (char) {
                 await loadCharacter(char, context);
                 if (auditId)
@@ -379,15 +387,17 @@ function setupRecorderInput() {
             }
         }
         catch {
-            speakOnce("网络好像不太好，等一下再试吧。");
+            if (myRound === round)
+                speakOnce("网络好像不太好，等一下再试吧。");
         }
         finally {
-            thinkingDots.hidden = true;
-            micBtn.classList.remove("is-thinking");
-            // 没写出字(误触/没听清/网络错)则空态引导回来
-            if (demoState === "idle")
-                showIdleGuidance();
-            micLabel.textContent = MIC_IDLE_LABEL;
+            if (myRound === round) {
+                thinkingDots.hidden = true;
+                // 没写出字(误触/没听清/网络错)则空态引导回来
+                if (demoState === "idle")
+                    showIdleGuidance();
+                micLabel.textContent = MIC_IDLE_LABEL;
+            }
         }
     }
     micBtn.addEventListener("pointerdown", startListening);
