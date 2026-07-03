@@ -37,19 +37,22 @@ await page.goto(`${base}/?test`, { waitUntil: "networkidle" });
 const visibleWithParam = await page.evaluate(() => !document.querySelector("#testInput").hidden);
 await page.screenshot({ path: `${out}/05-test-input.png` });
 
-// 输入「城怎么写」回车 -> 复用 extractTargetCharacter 取「城」并加载,动画起播
-await page.fill("#testInput", "城怎么写");
+// 输入「小城夏天的城怎么写」回车 -> 提取「城」+语境词「小城夏天」并加载,动画起播,
+// 回声消歧:播报应为「城,小城夏天的城」(headless 听不到 TTS,断言 window.lastSpeech)
+await page.fill("#testInput", "小城夏天的城怎么写");
 await page.press("#testInput", "Enter");
 await page.waitForSelector("#playPauseBtn.is-pause", { timeout: 8000 });
 await page.waitForTimeout(900);
 const title = await page.title();
+const echoSpeech = await page.evaluate(() => window.lastSpeech);
 await page.screenshot({ path: `${out}/06-test-loaded.png` });
 
-console.log(JSON.stringify({ errors, hiddenDefault, visibleWithParam, title }, null, 2));
+console.log(JSON.stringify({ errors, hiddenDefault, visibleWithParam, title, echoSpeech }, null, 2));
 
 const ok = errors.length === 0
   && hiddenDefault === true
   && visibleWithParam === true
-  && title.includes("城");
+  && title.includes("城")
+  && echoSpeech === "城，小城夏天的城";
 await browser.close();
 process.exit(ok ? 0 : 1);

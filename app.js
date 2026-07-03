@@ -32,6 +32,7 @@ canvas.width = BOARD * dpr;
 canvas.height = BOARD * dpr;
 
 let currentChar = "";
+let currentContext = ""; // 语境词(「小城夏天的城」的「小城夏天」),读音消歧用
 let strokes = []; // {outline, dense, cum, total, t0, t1}
 let totalVt = 0; // 整字书写时间线总长(ms)
 let runToken = 0; // 每次重写自增,旧动画看到 token 变了就退出
@@ -208,7 +209,9 @@ function setPlayGlyph(mode) {
 }
 
 function speakOnce(text) {
-  if (!("speechSynthesis" in window) || !text) return;
+  if (!text) return;
+  window.lastSpeech = text; // headless 听不到 TTS,e2e 靠这个断言播报内容
+  if (!("speechSynthesis" in window)) return;
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = "zh-CN";
@@ -221,23 +224,23 @@ function resetToIdle() {
   strokes = [];
   totalVt = 0;
   currentChar = "";
+  currentContext = "";
   clearBoard();
   demoState = "idle";
   setPlayGlyph("play");
 }
 
-async function loadCharacter(char) {
+// 回声消歧:识别到字后把语境词读回去(「城,小城夏天的城」)。孩子不认识
+// 屏幕上的字,听语境词对不对是他唯一能校验同音字错误的通道;顺带让多音字
+// 在词里读出正确读音。
+async function loadCharacter(char, context = "") {
   if (!char || !window.HanziWriter) return;
-  currentChar = char;
-  document.title = `${char} · 跟我写`;
 
   let data;
   try {
     data = await window.HanziWriter.loadCharacterData(char);
   } catch {
-    resetToIdle();
-    speakOnce("这个字还没找到，换一个吧。");
-    return;
+    data = null;
   }
   if (!data || !data.strokes) {
     resetToIdle();
@@ -245,8 +248,11 @@ async function loadCharacter(char) {
     return;
   }
 
+  currentChar = char;
+  currentContext = context;
+  document.title = `${char} · 跟我写`;
   buildTimeline(data);
-  speakOnce(char);
+  speakOnce(window.GWX.buildSpeechText(char, context));
   playDemo();
 }
 
@@ -292,9 +298,9 @@ function setupVoiceInput() {
   micBtn.addEventListener("pointerleave", stopListening);
 
   recognition.addEventListener("result", (event) => {
-    const { char } = window.GWX.extractTargetCharacter(event.results[0][0].transcript);
+    const { char, context } = window.GWX.extractTargetCharacter(event.results[0][0].transcript);
     if (char) {
-      loadCharacter(char);
+      loadCharacter(char, context);
     } else {
       speakOnce("没听清要写哪个字，再说一遍吧。");
     }
@@ -313,13 +319,13 @@ function setupTestInput() {
   testInput.hidden = false;
   testInput.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
-    const { char } = window.GWX.extractTargetCharacter(testInput.value);
-    if (char) loadCharacter(char);
+    const { char, context } = window.GWX.extractTargetCharacter(testInput.value);
+    if (char) loadCharacter(char, context);
   });
 }
 
 playPauseBtn.addEventListener("click", togglePlayPause);
-speakBtn.addEventListener("click", () => speakOnce(currentChar || ""));
+speakBtn.addEventListener("click", () => speakOnce(window.GWX.buildSpeechText(currentChar, currentContext)));
 
 setupVoiceInput();
 setupTestInput();
