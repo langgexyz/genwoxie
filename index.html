@@ -22,9 +22,10 @@
             <!-- 空态引导:格子里还没字时,页面上唯一可做的事就是按住说话 -->
             <p id="boardHint" class="board-hint">按住绿色按钮<br />说出想写的字</p>
 
-            <!-- 在想:松手到出字之间的思考动画(墨点起伏),孩子不识字,动效即反馈 -->
-            <div id="thinkingDots" class="thinking-dots" hidden aria-hidden="true">
-              <i></i><i></i><i></i>
+            <!-- 在想:松手到出字之间,一滴墨落在格心晕开(与写字同材质同位置),
+                 孩子不识字,动效即反馈 -->
+            <div id="thinkingInk" class="thinking-ink" hidden aria-hidden="true">
+              <i></i>
             </div>
           </div>
 

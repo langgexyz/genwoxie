@@ -304,45 +304,52 @@ button:disabled {
   display: flex;
 }
 
-/* 在想:格子中央墨点起伏(毛笔点墨的节奏),松手到出字之间的思考反馈 */
-.thinking-dots {
+/* 在想:一滴墨落在格心晕开(洇进宣纸的节奏)——与写字同材质、同落点,
+   "思考"发生在字将要出现的地方。松手到出字之间的思考反馈 */
+.thinking-ink {
   position: absolute;
   top: 50%;
   left: 50%;
-  display: flex;
-  gap: 18px;
+  width: 15%; /* 随田字格等比:太小会读成污点而不是一滴墨 */
+  aspect-ratio: 1;
   transform: translate(-50%, -50%);
+  pointer-events: none;
 }
 
-.thinking-dots[hidden] {
+.thinking-ink[hidden] {
   display: none;
 }
 
-.thinking-dots i {
-  width: 22px;
-  height: 22px;
+.thinking-ink i {
+  position: absolute;
+  inset: 0;
   border-radius: 50%;
-  background: rgb(26 30 34 / 0.82);
-  animation: ink-think 1.1s ease-in-out infinite;
+  background: radial-gradient(
+    circle,
+    rgb(31 34 38 / 0.85) 0%,
+    rgb(31 34 38 / 0.5) 45%,
+    rgb(31 34 38 / 0) 72%
+  );
+  animation: ink-bloom 1.5s ease-out infinite;
 }
 
-.thinking-dots i:nth-child(2) {
-  animation-delay: 0.18s;
-}
-
-.thinking-dots i:nth-child(3) {
-  animation-delay: 0.36s;
-}
-
-@keyframes ink-think {
-  0%,
-  100% {
-    transform: translateY(0) scale(0.85);
-    opacity: 0.45;
+/* 滴落(小而浓) -> 晕开(大而淡) -> 融进纸里;结尾的空拍=下一滴正在落 */
+@keyframes ink-bloom {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
   }
-  50% {
-    transform: translateY(-14px) scale(1);
-    opacity: 0.9;
+  10% {
+    transform: scale(0.45);
+    opacity: 1;
+  }
+  80% {
+    transform: scale(1.35);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
   }
 }
 
@@ -431,7 +438,7 @@ button:disabled {
 @media (prefers-reduced-motion: reduce) {
   .mic-button.is-beckoning,
   .wave-bars i,
-  .thinking-dots i,
+  .thinking-ink i,
   #speakBtn.is-speaking,
   #speakBtn.is-speaking .spk-arc1,
   #speakBtn.is-speaking .spk-arc2 {
