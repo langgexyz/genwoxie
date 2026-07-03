@@ -591,6 +591,18 @@ window.loadCharacter = loadCharacter;
 void setupVoiceInput();
 setupTestInput();
 // 首屏自我介绍:自动写出按钮例句的答案——「怎么问」(例句)与「会得到什么」
-// (演示)互为问答,孩子看动画即懂,零文字教学。手势前 TTS 被移动端浏览器
-// 静默是预期,「再读一遍」一点即有声。
+// (演示)互为问答,孩子看动画即懂,零文字教学。手势前 TTS 被浏览器静默,
+// 由下面的"首次触摸即开口"补上。
 void loadCharacter("城", "小城夏天");
+// 首次触摸即开口:触摸正是浏览器允许发声的解锁时刻——自动演示静默写完
+// 的字,孩子第一次碰屏幕(任何位置)就读出来。碰的是麦克风则让位:录音流
+// 程有自己的播报,抢话会盖住"在听"。一次性,之后各流程自带语音。
+const speakOnFirstTouch = (event) => {
+    window.removeEventListener("pointerdown", speakOnFirstTouch);
+    if (event.target instanceof Node && micBtn.contains(event.target))
+        return;
+    if (!currentChar)
+        return;
+    speakOnce(buildSpeechText(currentChar, currentContext));
+};
+window.addEventListener("pointerdown", speakOnFirstTouch);

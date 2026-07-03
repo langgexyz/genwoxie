@@ -39,6 +39,16 @@ const firstEntry = {
   hintGone: await page.evaluate(() => document.querySelector("#boardHint") === null),
 };
 
+// 首次触摸即开口契约:碰屏幕任意非按钮处,静默写完的字被读出(TTS 解锁时刻)
+await page.evaluate(() => {
+  window.lastSpeech = "";
+});
+await page.mouse.click(450, 300); // 点在田字格上,不碰任何按钮
+const firstTouchSpoke = await page
+  .waitForFunction(() => (window.lastSpeech ?? "").includes("城"), undefined, { timeout: 5000 })
+  .then(() => true)
+  .catch(() => false);
+
 await page.evaluate(() => window.loadCharacter("城"));
 
 // 等动画真正开始(按钮进入暂停态),此刻截图看「演示中」+ 暂停双竖条
@@ -123,7 +133,7 @@ const micDisabled = await page.evaluate(
 );
 
 console.log(
-  JSON.stringify({ errors, ink, title, pausedShowsPlay, micDisabled, firstEntry, loadedState, speakingShown, speakingCleared }, null, 2),
+  JSON.stringify({ errors, ink, title, pausedShowsPlay, micDisabled, firstEntry, firstTouchSpoke, loadedState, speakingShown, speakingCleared }, null, 2),
 );
 
 const ok =
@@ -135,6 +145,7 @@ const ok =
   pausedShowsPlay &&
   firstEntry.autoDemoStarted &&
   firstEntry.hintGone &&
+  firstTouchSpoke &&
   loadedState.controlsVisible &&
   loadedState.captions.join(",") === "再写一遍,再读一遍";
 await browser.close();
