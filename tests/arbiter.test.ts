@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { fallbackWithoutJudge, parseArbiterVerdict } from "../server/understand.ts";
+import { fallbackWithoutJudge, isSilentWav, parseArbiterVerdict } from "../server/understand.ts";
 
 const CASES: readonly [name: string, transcript: string, char: string, wantChar: string][] = [
   ["两路一致 -> 用 omni 结果", "小城夏天的城怎么写?", "城", "城"],
@@ -32,3 +32,25 @@ for (const [name, input, want] of VERDICT_CASES) {
     assert.deepEqual(parseArbiterVerdict(input), want);
   });
 }
+
+function makeWav(amplitude: number, n = 1600): Uint8Array {
+  const buf = new ArrayBuffer(44 + n * 2);
+  const v = new DataView(buf);
+  const ascii = (o: number, t: string) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  ascii(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); ascii(8, "WAVE"); ascii(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 16000, true); v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  ascii(36, "data"); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.round(Math.sin(i / 5) * amplitude), true);
+  return new Uint8Array(buf);
+}
+
+test("isSilentWav:底噪级振幅判静音(语料标定 rms<=42)", () => {
+  assert.equal(isSilentWav(makeWav(60)), true);
+});
+test("isSilentWav:真语音级振幅放行(最弱真语音 rms=491)", () => {
+  assert.equal(isSilentWav(makeWav(4000)), false);
+});
+test("isSilentWav:非 RIFF 数据放行(守卫只拦确凿静音)", () => {
+  assert.equal(isSilentWav(new Uint8Array([1, 2, 3, 4])), false);
+});
