@@ -45,7 +45,9 @@ await page.screenshot({ path: `${out}/05-test-input.png` });
 // 回声消歧:播报应为「城,小城夏天的城」(headless 听不到 TTS,断言 window.lastSpeech)
 await page.fill("#testInput", "小城夏天的城怎么写");
 await page.press("#testInput", "Enter");
-await page.waitForSelector("#playPauseBtn.is-pause", { timeout: 8000 });
+// 20s 对齐 smoke:全新 context 首查要冷拉字形(无 localStorage 缓存/冷连接),
+// 慢网络下 8s 不够,实测只挂这一处(smoke 同断言 20s 从不挂)。
+await page.waitForSelector("#playPauseBtn.is-pause", { timeout: 20000 });
 await page.waitForTimeout(900);
 const title = await page.title();
 const echoSpeech = await page.evaluate(() => window.lastSpeech);
