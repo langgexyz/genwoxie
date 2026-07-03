@@ -350,7 +350,9 @@ async function loadCharacter(char, context = "", speechPrefix = "") {
     speakOnce(speechPrefix + buildSpeechText(char, context));
     void playDemo();
 }
-const MIC_IDLE_LABEL = "按住说要写的字";
+// 待命文案带具体例句:例子即引导(孩子/家长照着说就对),且示范了
+// "带语境词"的正确问法(准确率最大杠杆,呼应调研人名类错误结论)。
+const MIC_IDLE_LABEL = "按住说“小城夏天的城怎么写”";
 // 语音输入按可用性选引擎:录音+云端理解(主) -> Web Speech(降级) -> 禁用+打字框。
 // 决策记录见 docs/tech/voice-pipeline-research.md 第 1 节降级链。
 async function setupVoiceInput() {

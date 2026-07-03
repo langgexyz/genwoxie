@@ -209,11 +209,12 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 12px;
   width: 100%;
   min-height: 76px;
   border-radius: 18px;
-  font-size: 22px;
+  font-size: clamp(16px, 4.6vw, 21px); /* 例句文案较长,按视口缩放保一行 */
+  white-space: nowrap;
   font-weight: 600;
   box-shadow: 0 14px 30px rgb(21 122 110 / 0.28);
   touch-action: none;
@@ -390,7 +391,6 @@ button:disabled {
 
   .mic-button {
     min-height: 84px;
-    font-size: 24px;
   }
 }
 
