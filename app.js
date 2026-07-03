@@ -234,13 +234,15 @@ function resetToIdle() {
 // 屏幕上的字,听语境词对不对是他唯一能校验同音字错误的通道;顺带让多音字
 // 在词里读出正确读音。
 async function loadCharacter(char, context = "") {
-  if (!char || !window.HanziWriter) return;
+  if (!char) return;
 
   let data;
   try {
-    data = await window.HanziWriter.loadCharacterData(char);
+    data = await window.GWXData.loadCharacterData(char);
   } catch {
-    data = null;
+    resetToIdle();
+    speakOnce("网络好像不太好，等一下再试吧。");
+    return;
   }
   if (!data || !data.strokes) {
     resetToIdle();

@@ -47,12 +47,46 @@ const title = await page.title();
 const echoSpeech = await page.evaluate(() => window.lastSpeech);
 await page.screenshot({ path: `${out}/06-test-loaded.png` });
 
-console.log(JSON.stringify({ errors, hiddenDefault, visibleWithParam, title, echoSpeech }, null, 2));
+// 字形数据 loader:查过的字应已进 localStorage 缓存(下次免网络)
+const cached = await page.evaluate(() => !!localStorage.getItem("gwx-chardata-2.0:城"));
 
-const ok = errors.length === 0
+// 负向:数据集里没有的字(拉丁字母 404)-> 播报「没找到」+ 画布清空 + 标题不被占
+await page.evaluate(() => window.loadCharacter("A"));
+await page.waitForFunction(() => (window.lastSpeech || "").includes("没找到"), { timeout: 8000 });
+await page.waitForTimeout(200);
+const inkAfterMiss = await page.evaluate(() => {
+  const c = document.querySelector("#inkCanvas");
+  const { data } = c.getContext("2d").getImageData(0, 0, c.width, c.height);
+  let inked = 0;
+  for (let i = 3; i < data.length; i += 4) if (data[i] > 20) inked++;
+  return inked / (data.length / 4);
+});
+const titleAfterMiss = await page.title();
+
+// 离线可用:拦掉所有字形数据请求,缓存过的「城」仍能从 localStorage 写出来
+await page.route(/hanzi-writer-data/, (r) => r.abort());
+await page.evaluate(() => window.loadCharacter("城"));
+let offlineReplay = true;
+await page.waitForSelector("#playPauseBtn.is-pause", { timeout: 8000 })
+  .catch(() => { offlineReplay = false; });
+
+// 负向用例故意打出 404(查不存在的字),资源 404 是预期内噪音;
+// 正向加载对错另有 title/ink 断言兜着,过滤它不会漏真故障。
+const unexpectedErrors = errors.filter((e) => !/status of 404/.test(e));
+
+console.log(JSON.stringify({
+  unexpectedErrors, hiddenDefault, visibleWithParam, title, echoSpeech,
+  cached, offlineReplay, inkAfterMiss, titleAfterMiss,
+}, null, 2));
+
+const ok = unexpectedErrors.length === 0
   && hiddenDefault === true
   && visibleWithParam === true
   && title.includes("城")
-  && echoSpeech === "城，小城夏天的城";
+  && echoSpeech === "城，小城夏天的城"
+  && cached === true
+  && offlineReplay === true
+  && inkAfterMiss === 0
+  && titleAfterMiss.includes("城");
 await browser.close();
 process.exit(ok ? 0 : 1);
