@@ -177,9 +177,27 @@ const releasedOutsideStops = await page
   .then(() => true)
   .catch(() => false);
 
+// 场景八:上一轮结束事件整个丢失(iOS 显式捕获触屏指针漏发 pointerup 的
+// 实机指纹:在听隔次失灵)后再按——按下必须是全新开始,仍进入在听。
+await mic.dispatchEvent("pointerdown");
+await page.waitForSelector("#micBtn[data-recording]", { timeout: 10000 });
+// 不发 pointerup,直接再按(模拟结束事件丢失)
+await mic.dispatchEvent("pointerdown");
+const repressStartsFresh = await page
+  .waitForFunction(
+    () =>
+      document.querySelector("#micBtn")?.hasAttribute("data-recording") === true &&
+      document.querySelector("#micBtn")?.classList.contains("is-listening") === true,
+    undefined,
+    { timeout: 10000 },
+  )
+  .then(() => true)
+  .catch(() => false);
+await mic.dispatchEvent("pointerup");
+
 console.log(
   JSON.stringify(
-    { unexpectedErrors, echoSpeech, ink, title, labelRestored, correctionSpeech, weakHintSpeech, pressReset, inkDuringListen, driftKeptListening, releasedOutsideStops },
+    { unexpectedErrors, echoSpeech, ink, title, labelRestored, correctionSpeech, weakHintSpeech, pressReset, inkDuringListen, driftKeptListening, releasedOutsideStops, repressStartsFresh },
     null,
     2,
   ),
@@ -196,6 +214,7 @@ const ok =
   pressReset.controlsHidden &&
   inkDuringListen === 0 &&
   driftKeptListening &&
-  releasedOutsideStops;
+  releasedOutsideStops &&
+  repressStartsFresh;
 await browser.close();
 process.exit(ok ? 0 : 1);

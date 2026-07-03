@@ -338,20 +338,28 @@ async function fadeOutBoard(): Promise<void> {
 
 // 长按是唯一手势,浏览器抢手势是"在听"间歇消失的根源:长按弹系统菜单
 // (contextmenu -> pointercancel)、手指滑出按钮边缘(pointerleave)都会把
-// 录音半路掐掉。对策:阻断 contextmenu + 捕获指针(滑出不算离开),松手在
-// 哪都算松手(pointerup 挂 window,兜住捕获不生效的引擎)。
+// 录音半路掐掉。对策:阻断 contextmenu + 滑出不算离开(触屏走规范的隐式
+// 捕获;鼠标显式捕获——iOS WebKit 对显式捕获的触屏指针会漏发 pointerup,
+// 触屏禁用显式捕获),松手在哪都算松手(pointerup 挂 window)。
+// 不变量:按下永远是全新开始——上一轮结束事件(pointerup/cancel)整个丢失
+// 也不延续,否则 holding 卡住会让"在听"隔次失灵(1 有 2 无实机指纹)。
 function bindHoldToTalk(start: (event: Event) => void, stop: () => void): void {
   micBtn.addEventListener("contextmenu", (event) => event.preventDefault());
   micBtn.addEventListener("pointerdown", (event) => {
-    try {
-      micBtn.setPointerCapture(event.pointerId);
-    } catch {
-      // 指针已失效(极端时序):不捕获也能走完,只是滑出边缘会提前松手
+    stop(); // 上一轮残留先收尾(无残留则是空操作)
+    if (event instanceof PointerEvent && event.pointerType === "mouse") {
+      try {
+        micBtn.setPointerCapture(event.pointerId);
+      } catch {
+        // 指针已失效(极端时序):不捕获也能走完,只是滑出边缘会提前松手
+      }
     }
     start(event);
   });
   window.addEventListener("pointerup", stop);
   micBtn.addEventListener("pointercancel", stop);
+  // 隐式捕获释放(手指抬起)时必发,iOS 漏发 pointerup 的兜底结束信号
+  micBtn.addEventListener("lostpointercapture", stop);
 }
 
 function resetToIdle(): void {
