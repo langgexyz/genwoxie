@@ -11,6 +11,7 @@
   - 毛笔书写动画：沿笔画中线一笔一笔写出来，有笔尖、起收笔提按、按笔画长短的书写速度（可播放 / 暂停）
   - 喇叭，读出这个字的读音
 - 识别到字后：自动演示一遍笔顺 + 自动读一遍读音，演示完整字留在格子里供照抄。
+- 回声消歧：读音会把孩子说的语境词读回去（说「小城夏天的城怎么写」→ 播报「城，小城夏天的城」）。孩子不认识屏幕上的字，听语境词对不对是他唯一能发现同音字识别错误的通道；多音字也因此在词里读出正确读音。
 
 小朋友始终写在纸上，屏幕只当字帖参照，所以页面上没有手写 / 描红 / 打字框。
 
@@ -27,10 +28,11 @@ python3 -m http.server 8731
 
 ## 技术
 
-- 字形数据：[hanzi-writer](https://hanziwriter.org/)（CDN 引入，按需在线拉任意汉字的真实楷体轮廓 + 笔画中线，不限内置字库）。只取数据，不用它渲染。
+- 字形数据：[hanzi-writer-data](https://github.com/chanind/hanzi-writer-data)（真实楷体轮廓 + 笔画中线，覆盖全量常用字）。自己 fetch 按需拉（`chardata.js`），多 CDN 源自动换源 + localStorage 缓存（查过的字离线可用），不引 hanzi-writer 库本身。
+- 话术提取：`extract.js` 纯函数（浏览器/node 双端），从整句话里取目标字 + 语境词，带单测表。
 - 毛笔渲染：自己用 `<canvas>` 实现 —— 保留楷体轮廓当形状边界裁剪，在边界内用一支会运笔的毛笔沿中线盖墨写出来。字形利落（照抄字帖要形状对），毛笔感在书写过程里。
 - 读音：浏览器自带语音合成 `speechSynthesis`。
-- 无后端、无打包，三个文件：`index.html` / `app.js` / `styles.css`。
+- 无后端、无打包：`index.html` / `app.js` / `extract.js` / `chardata.js` / `styles.css`。
 
 ## 测试
 
@@ -41,4 +43,6 @@ python3 -m http.server 8731 &
 node e2e/smoke.mjs   # 截图落 .cache/genwoxie/
 ```
 
-`e2e/test-input.mjs`：校验 `?test` 打字框入口。带 `?test` 参数访问（`http://localhost:8731/?test`）才显示一个打字框，绕过语音直接输入要写的字、回车查字，方便手测 / e2e；正式界面（无参数）不出现这个框。
+`e2e/test-input.mjs`：校验 `?test` 打字框入口（带 `?test` 参数访问才显示，正式界面不出现），并覆盖：回声消歧播报文本、字形数据 localStorage 缓存、拦掉 CDN 后缓存字离线重写、查不到的字播报「没找到」且画布保持空。
+
+`tests/extract.test.mjs`：话术提取单测表（`node --test tests/`），孩子的各种说法 → 期望的目标字 + 语境词，含负向用例。
