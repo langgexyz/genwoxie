@@ -8,6 +8,13 @@ export interface UnderstandResult {
   context: string;
 }
 
+// 完整推理过程:result 回给前端;transcript/arbitrated 供语料落盘与异步审计。
+export interface UnderstandOutcome {
+  result: UnderstandResult;
+  transcript: string;
+  arbitrated: boolean;
+}
+
 export interface UnderstandConfig {
   apiKey: string;
   baseUrl: string; // 如 https://ws-xxx.cn-beijing.maas.aliyuncs.com
@@ -40,12 +47,11 @@ export const UNDERSTAND_PROMPT = [
   "只输出 JSON,不要任何其他文字。",
 ].join("\n");
 
-// 仲裁触发判据:omni 判的字没出现在 ASR 转写里 = 两路听感分歧(真实错例
-// 「蝉」不在转写「小城夏天的城怎么说」里,正是该签名);转写为空不触发
-// (无证据可仲裁);char 为空不触发(产品层走"没听清"引导)。
-export function needsArbitration(transcript: string, char: string): boolean {
-  if (!transcript || !char) return false;
-  return !transcript.includes(char);
+// GPT 裁判失败时的保守回退:两路一致才敢用 omni 结果;分歧时宁可返回空
+// (前端引导"再说一遍")也不猜——孩子无法自判错误,准确率优先(user 拍板)。
+export function fallbackWithoutJudge(transcript: string, omni: UnderstandResult): UnderstandResult {
+  if (omni.char && transcript && transcript.includes(omni.char)) return omni;
+  return { char: "", context: "" };
 }
 
 // 文本仲裁:把 ASR 转写 + omni 判定交给文本大模型终审(证据互相印证,含世界
@@ -70,11 +76,12 @@ async function arbitrateOnce(
   cfg: ArbiterConfig,
 ): Promise<UnderstandResult | null> {
   const prompt =
-    "中文识字应用:孩子说了句话想让应用写某个汉字,两路识别有分歧,请你终审。\n" +
+    "中文识字应用:孩子说了句话想让应用写某个汉字,两路独立识别结果如下,请你综合判定。\n" +
     `专职语音识别转写:"${transcript.replaceAll('"', "'")}"\n` +
     `音频多模态模型判定:${JSON.stringify(omniResult)}\n` +
-    "转写通常更接近逐字发音;多模态模型直接听了音频但可能被噪音误导。结合常用词/" +
-    '歌名等世界知识判断孩子最可能要写的字。只返回 JSON:{"char":"单字","context":"语境词,不含 的+目标字"}';
+    "两路一致通常可信;分歧时,转写更接近逐字发音,多模态直接听了音频但可能被噪音误导。" +
+    "结合常用词/歌名等世界知识判断孩子最可能要写的字;孩子说的是多字词时取第一个字。" +
+    '只返回 JSON:{"char":"单字","context":"语境词,不含 的+目标字"}';
   try {
     const res = await fetch(`${cfg.baseUrl}/v1/responses`, {
       method: "POST",
@@ -148,16 +155,31 @@ export async function understandAudio(
   audioB64: string,
   format: string,
   cfg: UnderstandConfig,
-): Promise<UnderstandResult> {
-  let transcript = "";
-  try {
-    transcript = (await transcribe(audioB64, format, cfg)).trim().slice(0, 100);
-  } catch {
-    // ASR 挂了退化为纯 omni
+): Promise<UnderstandOutcome> {
+  // 三路全同步(user 拍板:孩子无法自判错误,准确率优先于延迟):
+  // ASR 与 omni 并行独立听音(独立错误对裁判更有信息量,也比串行快 0.7s),
+  // GPT 拿两路证据综合终审;GPT 失败走保守回退(一致才用,分歧宁可请孩子重说)。
+  const [transcriptRaw, omniResult] = await Promise.all([
+    transcribe(audioB64, format, cfg).catch(() => ""),
+    omniListen(audioB64, format, cfg),
+  ]);
+  const transcript = transcriptRaw.trim().slice(0, 100);
+
+  if (cfg.arbiter) {
+    const verdict = await arbitrate(transcript, omniResult, cfg.arbiter);
+    if (verdict) return { result: verdict, transcript, arbitrated: true };
+    return { result: fallbackWithoutJudge(transcript, omniResult), transcript, arbitrated: false };
   }
-  const prompt = transcript
-    ? `${UNDERSTAND_PROMPT}\n专职语音识别对这段音频的参考转写(可能有错,与你自己听到的互相印证):"${transcript.replaceAll('"', "'")}"`
-    : UNDERSTAND_PROMPT;
+  // 未配裁判(本地降级模式):按保守策略合并两路
+  return { result: fallbackWithoutJudge(transcript, omniResult), transcript, arbitrated: false };
+}
+
+async function omniListen(
+  audioB64: string,
+  format: string,
+  cfg: UnderstandConfig,
+): Promise<UnderstandResult> {
+  const prompt = UNDERSTAND_PROMPT;
 
   const body = {
     model: cfg.model ?? DEFAULT_MODEL,
@@ -187,14 +209,7 @@ export async function understandAudio(
   }
 
   // 交互是"松手后一次出结果",无需逐 token 转发:等 SSE 收完再拼装。
-  const omniResult = extractJsonObject(collectSse(await res.text()));
-
-  // 条件仲裁:两路一致(绝大多数请求)直接返回,不加延迟;分歧才请终审。
-  if (cfg.arbiter && needsArbitration(transcript, omniResult.char)) {
-    const verdict = await arbitrate(transcript, omniResult, cfg.arbiter);
-    if (verdict) return verdict;
-  }
-  return omniResult;
+  return extractJsonObject(collectSse(await res.text()));
 }
 
 function collectSse(raw: string): string {

@@ -12,7 +12,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, join, normalize, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { understandAudio } from "./understand.ts";
+import { understandAudio, type UnderstandOutcome } from "./understand.ts";
 
 const PORT = Number(process.env["PORT"] ?? 8731);
 const MOCK = process.env["MOCK_UNDERSTAND"] === "1";
@@ -90,27 +90,29 @@ async function handleUnderstand(req: IncomingMessage, res: ServerResponse): Prom
     return;
   }
   try {
-    const result = await understandAudio(audio, format, {
+    const arbiter =
+      ARBITER_URL && ARBITER_KEY && ARBITER_MODEL
+        ? { baseUrl: ARBITER_URL, apiKey: ARBITER_KEY, model: ARBITER_MODEL }
+        : undefined;
+    const outcome = await understandAudio(audio, format, {
       apiKey: API_KEY,
       baseUrl: BASE_URL,
-      arbiter:
-        ARBITER_URL && ARBITER_KEY && ARBITER_MODEL
-          ? { baseUrl: ARBITER_URL, apiKey: ARBITER_KEY, model: ARBITER_MODEL }
-          : undefined,
+      arbiter,
     });
-    if (CORPUS_DIR) void saveCorpus(audio, format, result);
-    sendJson(res, 200, result);
+    sendJson(res, 200, outcome.result);
+    if (CORPUS_DIR) void saveCorpus(audio, format, outcome);
   } catch (e) {
     console.error("error: understand 调用失败:", e instanceof Error ? e.message : e);
     sendJson(res, 502, { error: "模型服务暂时不可用" });
   }
 }
 
-// 语料落盘:同名 wav+json 一对;expected 字段初值取模型输出,人工纠错时改 json 即可。
+// 语料落盘:同名 wav+json 一对,记录三路证据(转写/最终结果/是否经裁判);
+// expected 初值取最终输出,人工纠错改 json。
 async function saveCorpus(
   audioB64: string,
   format: string,
-  result: { char: string; context: string },
+  outcome: UnderstandOutcome,
 ): Promise<void> {
   try {
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -118,7 +120,18 @@ async function saveCorpus(
     await writeFile(join(CORPUS_DIR, `${stamp}.${format}`), Buffer.from(audioB64, "base64"));
     await writeFile(
       join(CORPUS_DIR, `${stamp}.json`),
-      JSON.stringify({ expected: result.char, model: result, format, savedAt: stamp }, null, 2),
+      JSON.stringify(
+        {
+          expected: outcome.result.char,
+          model: outcome.result,
+          transcript: outcome.transcript,
+          judged: outcome.arbitrated,
+          format,
+          savedAt: stamp,
+        },
+        null,
+        2,
+      ),
     );
   } catch (e) {
     console.error("warning: 语料落盘失败(不影响主流程):", e instanceof Error ? e.message : e);
