@@ -39,16 +39,6 @@ let paused = false;
 // idle: 还没字 / animating: 正在写 / paused: 写到一半停 / done: 整字已留在格子里
 let demoState = "idle";
 
-function extractTargetCharacter(text) {
-  const clean = text.trim();
-  const possessive = clean.match(/的(\p{Script=Han})(?=[^，。！？,.!?]*写)/u);
-  if (possessive) return possessive[1];
-  const direct = clean.match(/(\p{Script=Han})(?:字)?(?:怎么|咋|如何|怎样)?写/u);
-  if (direct) return direct[1];
-  const han = [...clean].filter((c) => /\p{Script=Han}/u.test(c));
-  return han[0] || "";
-}
-
 function applyGlyphTransform() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.translate(PADDING, BOARD - PADDING);
@@ -302,7 +292,7 @@ function setupVoiceInput() {
   micBtn.addEventListener("pointerleave", stopListening);
 
   recognition.addEventListener("result", (event) => {
-    const char = extractTargetCharacter(event.results[0][0].transcript);
+    const { char } = window.GWX.extractTargetCharacter(event.results[0][0].transcript);
     if (char) {
       loadCharacter(char);
     } else {
@@ -323,7 +313,7 @@ function setupTestInput() {
   testInput.hidden = false;
   testInput.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
-    const char = extractTargetCharacter(testInput.value);
+    const { char } = window.GWX.extractTargetCharacter(testInput.value);
     if (char) loadCharacter(char);
   });
 }
