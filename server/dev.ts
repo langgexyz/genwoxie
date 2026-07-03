@@ -201,7 +201,13 @@ async function serveStatic(pathname: string, res: ServerResponse): Promise<void>
   }
   try {
     const data = await readFile(file);
-    res.writeHead(200, { "Content-Type": MIME[extname(file)] ?? "application/octet-stream" });
+    res.writeHead(200, {
+      "Content-Type": MIME[extname(file)] ?? "application/octet-stream",
+      // no-cache=每次向服务器复核新鲜度(不是不缓存)。此前无任何缓存头,
+      // iOS Safari 启发式缓存拿旧 JS,修复发了端上跑的还是老代码。
+      // 文件小(全站 <300KB),复核成本可忽略;后续量大再上内容哈希文件名。
+      "Cache-Control": "no-cache",
+    });
     res.end(data);
   } catch {
     res.writeHead(404).end("not found");
