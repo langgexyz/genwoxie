@@ -1,9 +1,10 @@
-// 理解服务客户端:wav 录音 -> POST /api/understand -> {char, context}。
+// 理解服务客户端:wav 录音 -> POST api/understand -> {char, context}。
+// API 路径用相对形式:根路径与反代子路径(如 ccdirect.dev/xie/)部署都成立。
 // 服务端(dev server / FC 函数)持有模型 key,前端只见业务 JSON。
 // 页面加载时探测理解服务是否在(纯静态部署无后端时走 Web Speech 降级链)。
 export async function probeUnderstandApi(timeoutMs = 1500) {
     try {
-        const res = await fetch("/api/health", { signal: AbortSignal.timeout(timeoutMs) });
+        const res = await fetch("api/health", { signal: AbortSignal.timeout(timeoutMs) });
         if (!res.ok)
             return false;
         const data = (await res.json());
@@ -14,7 +15,7 @@ export async function probeUnderstandApi(timeoutMs = 1500) {
     }
 }
 export async function requestUnderstand(wav) {
-    const res = await fetch("/api/understand", {
+    const res = await fetch("api/understand", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ audio: await blobToBase64(wav), format: "wav" }),
