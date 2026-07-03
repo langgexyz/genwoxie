@@ -221,7 +221,95 @@ button:disabled {
 }
 
 .mic-button:active {
-  transform: scale(0.99);
+  transform: scale(0.97); /* 按下压感,准备态的即时反馈 */
+}
+
+/* 在听:麦克风图标让位给声波条 */
+.wave-bars {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+}
+
+.wave-bars i {
+  width: 5px;
+  height: 12px;
+  border-radius: 3px;
+  background: #fff;
+  animation: wave-bounce 0.9s ease-in-out infinite;
+}
+
+.wave-bars i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.wave-bars i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.wave-bars i:nth-child(4) {
+  animation-delay: 0.45s;
+}
+
+@keyframes wave-bounce {
+  0%,
+  100% {
+    transform: scaleY(0.5);
+  }
+  50% {
+    transform: scaleY(1.8);
+  }
+}
+
+.mic-button.is-listening .mic-icon {
+  display: none;
+}
+
+.mic-button.is-listening .wave-bars {
+  display: flex;
+}
+
+/* 在想:格子中央墨点起伏(毛笔点墨的节奏),松手到出字之间的思考反馈 */
+.thinking-dots {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  gap: 18px;
+  transform: translate(-50%, -50%);
+}
+
+.thinking-dots[hidden] {
+  display: none;
+}
+
+.thinking-dots i {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgb(26 30 34 / 0.82);
+  animation: ink-think 1.1s ease-in-out infinite;
+}
+
+.thinking-dots i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.thinking-dots i:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes ink-think {
+  0%,
+  100% {
+    transform: translateY(0) scale(0.85);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translateY(-14px) scale(1);
+    opacity: 0.9;
+  }
 }
 
 /* 空态呼吸脉动:动画召唤"按我"(孩子不识字,动效即语言);按下/出字后移除 */

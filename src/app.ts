@@ -47,6 +47,7 @@ function mustQuery<T extends Element>(root: ParentNode, selector: string): T {
 
 const canvas = mustQuery<HTMLCanvasElement>(document, "#inkCanvas");
 const boardHint = mustQuery<HTMLParagraphElement>(document, "#boardHint");
+const thinkingDots = mustQuery<HTMLDivElement>(document, "#thinkingDots");
 const boardControls = mustQuery<HTMLDivElement>(document, "#boardControls");
 const playPauseBtn = mustQuery<HTMLButtonElement>(document, "#playPauseBtn");
 const speakBtn = mustQuery<HTMLButtonElement>(document, "#speakBtn");
@@ -347,6 +348,8 @@ function setupRecorderInput(): void {
         holding = false;
         micBtn.classList.remove("is-listening");
         micLabel.textContent = "麦克风用不了，检查一下授权";
+        // 孩子不识字,拒权也要有声音反馈
+        speakOnce("麦克风没打开，请大人来帮忙点一下允许。");
       });
   };
 
@@ -374,9 +377,12 @@ function setupRecorderInput(): void {
   }
 
   async function finishRecording(): Promise<void> {
+    // 在想:墨点起伏动画(空态引导先让位),孩子不识字,动效即"我在处理"
+    boardHint.hidden = true;
+    thinkingDots.hidden = false;
     try {
       const wav = await recorder.stop();
-      if (!wav) return; // 误触/太短,静默复位
+      if (!wav) return; // 误触/太短,静默复位(finally 恢复空态引导)
       const { char, context, auditId } = await requestUnderstand(wav);
       if (char) {
         await loadCharacter(char, context);
@@ -387,6 +393,9 @@ function setupRecorderInput(): void {
     } catch {
       speakOnce("网络好像不太好，等一下再试吧。");
     } finally {
+      thinkingDots.hidden = true;
+      // 没写出字(误触/没听清/网络错)则空态引导回来
+      if (demoState === "idle") boardHint.hidden = false;
       micLabel.textContent = MIC_IDLE_LABEL;
     }
   }
