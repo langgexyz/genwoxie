@@ -18,6 +18,10 @@ const PORT = Number(process.env["PORT"] ?? 8731);
 const MOCK = process.env["MOCK_UNDERSTAND"] === "1";
 const API_KEY = process.env["DASHSCOPE_API_KEY"] ?? "";
 const BASE_URL = process.env["DASHSCOPE_BASE_URL"] ?? "";
+// 仲裁层可选:三个 ARBITER_* 都给了才启用
+const ARBITER_URL = process.env["ARBITER_URL"] ?? "";
+const ARBITER_KEY = process.env["ARBITER_KEY"] ?? "";
+const ARBITER_MODEL = process.env["ARBITER_MODEL"] ?? "";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // 语料收集:设了 CORPUS_DIR 就把每次真实请求的音频+识别结果落盘,
 // 作为回放测试/eval 语料(童声正确率没有公开数据,自采语料是核心资产)。
@@ -86,7 +90,14 @@ async function handleUnderstand(req: IncomingMessage, res: ServerResponse): Prom
     return;
   }
   try {
-    const result = await understandAudio(audio, format, { apiKey: API_KEY, baseUrl: BASE_URL });
+    const result = await understandAudio(audio, format, {
+      apiKey: API_KEY,
+      baseUrl: BASE_URL,
+      arbiter:
+        ARBITER_URL && ARBITER_KEY && ARBITER_MODEL
+          ? { baseUrl: ARBITER_URL, apiKey: ARBITER_KEY, model: ARBITER_MODEL }
+          : undefined,
+    });
     if (CORPUS_DIR) void saveCorpus(audio, format, result);
     sendJson(res, 200, result);
   } catch (e) {

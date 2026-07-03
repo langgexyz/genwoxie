@@ -6,7 +6,7 @@
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json",
     "dev": "node --experimental-strip-types server/dev.ts",
-    "test": "npm run build && node --experimental-strip-types --test tests/extract.test.ts tests/wav.test.ts tests/understand-parse.test.ts",
+    "test": "npm run build && node --experimental-strip-types --test tests/extract.test.ts tests/wav.test.ts tests/understand-parse.test.ts tests/arbiter.test.ts",
     "e2e": "node --experimental-strip-types e2e/smoke.ts && node --experimental-strip-types e2e/test-input.ts",
     "e2e:voice": "node --experimental-strip-types e2e/voice.ts"
   },
