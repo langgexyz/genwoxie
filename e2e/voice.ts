@@ -35,6 +35,9 @@ await page.goto(`${BASE_URL}/index.html`, { waitUntil: "networkidle" });
 // 正向:按住 1s 说话(假设备出测试音),松手 -> mock 返回 城/小城夏天 -> 演示起播
 const mic = page.locator("#micBtn");
 await mic.dispatchEvent("pointerdown");
+// 等"真开录"信号再计说话时长:高负载下 getUserMedia 可达秒级,固定 sleep 会
+// 把按住时间全耗在拿麦克风上,录音过短被判误触(实测 flake 根因)。
+await page.waitForSelector("#micBtn[data-recording]", { timeout: 10000 });
 await page.waitForTimeout(1000);
 await mic.dispatchEvent("pointerup");
 
@@ -57,6 +60,7 @@ await page.evaluate(() => {
   window.lastSpeech = "";
 });
 await mic.dispatchEvent("pointerdown");
+await page.waitForSelector("#micBtn[data-recording]", { timeout: 10000 });
 await page.waitForTimeout(700);
 await mic.dispatchEvent("pointerup");
 await page.waitForFunction(() => (window.lastSpeech ?? "").includes("网络"), undefined, {
@@ -72,6 +76,7 @@ await page.evaluate(() => {
   window.lastSpeech = "";
 });
 await mic.dispatchEvent("pointerdown");
+await page.waitForSelector("#micBtn[data-recording]", { timeout: 10000 });
 await page.waitForTimeout(700);
 await mic.dispatchEvent("pointerup");
 await page.waitForFunction(() => (window.lastSpeech ?? "").includes("没听清"), undefined, {
@@ -82,8 +87,44 @@ await page.waitForFunction(() => (window.lastSpeech ?? "").includes("没听清")
 // 正向对错另有 echo/ink/title 断言兜着,过滤不会漏真故障。
 const unexpectedErrors = errors.filter((e) => !/status of 502/.test(e));
 
+// 纠错闭环:mock 理解先返回错字「成」(带 auditId),复核端点返回纠正「城」->
+// 断言:先写了成,随后播「听错啦,是城,小城夏天的城」并切写城(动画+语音,无文字提示)
+await page.unroute("**/api/understand");
+await page.route("**/api/understand", (r) =>
+  r.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: '{"char":"成","context":"","auditId":"t-fix"}',
+  }),
+);
+await page.route("**/api/audit**", (r) =>
+  r.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: '{"status":"done","agree":false,"char":"城","context":"小城夏天"}',
+  }),
+);
+await page.evaluate(() => {
+  window.lastSpeech = "";
+});
+await mic.dispatchEvent("pointerdown");
+await page.waitForSelector("#micBtn[data-recording]", { timeout: 10000 });
+await page.waitForTimeout(700);
+await mic.dispatchEvent("pointerup");
+await page.waitForFunction(() => document.title.includes("成"), undefined, { timeout: 10000 });
+await page.waitForFunction(() => (window.lastSpeech ?? "").includes("听错啦"), undefined, {
+  timeout: 15000,
+});
+const correctionSpeech = await page.evaluate(() => window.lastSpeech);
+await page.waitForFunction(() => document.title.includes("城"), undefined, { timeout: 10000 });
+await page.screenshot({ path: `${out}/26-corrected.png` });
+
 console.log(
-  JSON.stringify({ unexpectedErrors, echoSpeech, ink, title, labelRestored }, null, 2),
+  JSON.stringify(
+    { unexpectedErrors, echoSpeech, ink, title, labelRestored, correctionSpeech },
+    null,
+    2,
+  ),
 );
 
 const ok =
@@ -91,6 +132,7 @@ const ok =
   echoSpeech === "城，小城夏天的城" &&
   ink > 0.03 &&
   title.includes("城") &&
-  labelRestored === "按住说要写的字";
+  labelRestored === "按住说要写的字" &&
+  correctionSpeech === "听错啦，是城，小城夏天的城";
 await browser.close();
 process.exit(ok ? 0 : 1);
