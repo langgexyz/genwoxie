@@ -5,6 +5,40 @@
 export interface UnderstandResult {
   char: string;
   context: string;
+  auditId?: string; // 服务端后台复核的单号,拿它轮询纠错结果
+}
+
+export interface AuditCorrection {
+  char: string;
+  context: string;
+}
+
+// 轮询后台复核:发现纠错(agree=false 且给了新字)返回之,同意/超时/出错返回 null。
+// 孩子无感等待,不占同步链路延迟。
+export async function pollAuditCorrection(
+  auditId: string,
+  signal: AbortSignal,
+): Promise<AuditCorrection | null> {
+  for (let i = 0; i < 15; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    if (signal.aborted) return null;
+    try {
+      const res = await fetch(`api/audit?id=${encodeURIComponent(auditId)}`, { signal });
+      if (!res.ok) return null;
+      const data = (await res.json()) as Record<string, unknown>;
+      if (data["status"] === "pending") continue;
+      if (data["agree"] === false && typeof data["char"] === "string" && data["char"]) {
+        return {
+          char: data["char"],
+          context: typeof data["context"] === "string" ? data["context"] : "",
+        };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 // 页面加载时探测理解服务是否在(纯静态部署无后端时走 Web Speech 降级链)。
@@ -31,6 +65,7 @@ export async function requestUnderstand(wav: Blob): Promise<UnderstandResult> {
   return {
     char: typeof data["char"] === "string" ? data["char"] : "",
     context: typeof data["context"] === "string" ? data["context"] : "",
+    auditId: typeof data["auditId"] === "string" ? data["auditId"] : undefined,
   };
 }
 

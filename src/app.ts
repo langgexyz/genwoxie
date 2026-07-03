@@ -10,7 +10,7 @@
 import { extractTargetCharacter, buildSpeechText } from "./extract.js";
 import { loadCharacterData, type CharacterData } from "./chardata.js";
 import { HoldRecorder, recordingSupported } from "./recorder.js";
-import { probeUnderstandApi, requestUnderstand } from "./understand.js";
+import { pollAuditCorrection, probeUnderstandApi, requestUnderstand } from "./understand.js";
 
 const BOARD = 640;
 const PADDING = 50;
@@ -251,6 +251,15 @@ function speakOnce(text: string): void {
   window.speechSynthesis.speak(utterance);
 }
 
+// 纠错切字的视觉过渡:旧字淡出 -> 清板 -> (调用方起笔写新字)。
+async function fadeOutBoard(): Promise<void> {
+  canvas.style.transition = "opacity 0.45s ease";
+  canvas.style.opacity = "0";
+  await new Promise((r) => setTimeout(r, 480));
+  clearBoard();
+  canvas.style.opacity = "1";
+}
+
 function resetToIdle(): void {
   runToken++;
   strokes = [];
@@ -260,15 +269,17 @@ function resetToIdle(): void {
   clearBoard();
   demoState = "idle";
   setPlayGlyph("play");
-  // 回到空态:唯一动作重新变成"按住说话",次级控件收起、引导语回来
+  // 回到空态:唯一动作重新变成"按住说话",次级控件收起、引导语回来;
+  // 麦克风呼吸脉动(动画召唤,孩子不识字,靠动效知道按哪)
   boardHint.hidden = false;
   boardControls.hidden = true;
+  micBtn.classList.add("is-beckoning");
 }
 
 // 回声消歧:识别到字后把语境词读回去(「城,小城夏天的城」)。孩子不认识
 // 屏幕上的字,听语境词对不对是他唯一能校验同音字错误的通道;顺带让多音字
 // 在词里读出正确读音。
-async function loadCharacter(char: string, context = ""): Promise<void> {
+async function loadCharacter(char: string, context = "", speechPrefix = ""): Promise<void> {
   if (!char) return;
 
   let data: CharacterData | null;
@@ -292,7 +303,8 @@ async function loadCharacter(char: string, context = ""): Promise<void> {
   // 格子里有字了,"再看/再听"才有意义,此时才亮出次级控件
   boardHint.hidden = true;
   boardControls.hidden = false;
-  speakOnce(buildSpeechText(char, context));
+  micBtn.classList.remove("is-beckoning");
+  speakOnce(speechPrefix + buildSpeechText(char, context));
   void playDemo();
 }
 
@@ -312,35 +324,63 @@ async function setupVoiceInput(): Promise<void> {
 function setupRecorderInput(): void {
   const recorder = new HoldRecorder();
   let holding = false;
+  let auditAbort: AbortController | null = null;
 
   const startListening = (event: Event): void => {
     event.preventDefault();
     if (holding) return;
     holding = true;
+    auditAbort?.abort(); // 新一轮提问,不再理会上一轮的复核
     micBtn.classList.add("is-listening");
-    micLabel.textContent = "在听…";
-    recorder.start().catch(() => {
-      holding = false;
-      micBtn.classList.remove("is-listening");
-      micLabel.textContent = "麦克风用不了，检查一下授权";
-    });
+    // 拿麦克风是异步的(首次授权/高负载可达秒级),真开录前显示"准备…",
+    // 就绪才切"在听…"——否则孩子提前开口丢字头。data-recording 同时是
+    // e2e 的"真开录"观测信号。
+    micLabel.textContent = "准备…";
+    recorder
+      .start()
+      .then(() => {
+        if (!holding) return;
+        micLabel.textContent = "在听…";
+        micBtn.dataset["recording"] = "1";
+      })
+      .catch(() => {
+        holding = false;
+        micBtn.classList.remove("is-listening");
+        micLabel.textContent = "麦克风用不了，检查一下授权";
+      });
   };
 
   const stopListening = (): void => {
     if (!holding) return;
     holding = false;
     micBtn.classList.remove("is-listening");
+    delete micBtn.dataset["recording"];
     micLabel.textContent = "在想…";
     void finishRecording();
   };
+
+  // 后台复核纠错闭环:GPT 不同意已写的字时,动画+语音切到对的字
+  // (旧字淡出擦除 -> 播"听错啦,是X" -> 新字一笔一笔重写);
+  // 孩子已经在查下一个字则放弃打扰。
+  function watchAuditCorrection(auditId: string, original: string): void {
+    auditAbort?.abort();
+    const ac = new AbortController();
+    auditAbort = ac;
+    void pollAuditCorrection(auditId, ac.signal).then(async (fix) => {
+      if (!fix || ac.signal.aborted || currentChar !== original) return;
+      await fadeOutBoard();
+      void loadCharacter(fix.char, fix.context, "听错啦，是");
+    });
+  }
 
   async function finishRecording(): Promise<void> {
     try {
       const wav = await recorder.stop();
       if (!wav) return; // 误触/太短,静默复位
-      const { char, context } = await requestUnderstand(wav);
+      const { char, context, auditId } = await requestUnderstand(wav);
       if (char) {
         await loadCharacter(char, context);
+        if (auditId) watchAuditCorrection(auditId, char);
       } else {
         speakOnce("没听清要写哪个字，再说一遍吧。");
       }
