@@ -125,9 +125,30 @@ const correctionSpeech = await page.evaluate(() => window.lastSpeech);
 await page.waitForFunction(() => document.title.includes("城"), undefined, { timeout: 10000 });
 await page.screenshot({ path: `${out}/26-corrected.png` });
 
+// 弱证据引导:复核同意但 weak(人名类同音字) -> 语音引导换个有判别力的说法
+await page.unroute("**/api/audit**");
+await page.route("**/api/audit**", (r) =>
+  r.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: '{"status":"done","agree":true,"weak":true}',
+  }),
+);
+await page.evaluate(() => {
+  window.lastSpeech = "";
+});
+await mic.dispatchEvent("pointerdown");
+await page.waitForSelector("#micBtn[data-recording]", { timeout: 10000 });
+await page.waitForTimeout(700);
+await mic.dispatchEvent("pointerup");
+await page.waitForFunction(() => (window.lastSpeech ?? "").includes("有名的词"), undefined, {
+  timeout: 15000,
+});
+const weakHintSpeech = await page.evaluate(() => window.lastSpeech);
+
 console.log(
   JSON.stringify(
-    { unexpectedErrors, echoSpeech, ink, title, labelRestored, correctionSpeech, pressReset, inkDuringListen },
+    { unexpectedErrors, echoSpeech, ink, title, labelRestored, correctionSpeech, weakHintSpeech, pressReset, inkDuringListen },
     null,
     2,
   ),
@@ -140,6 +161,7 @@ const ok =
   title.includes("城") &&
   labelRestored === "按住说要写的字" &&
   correctionSpeech === "听错啦，是城，小城夏天的城" &&
+  (weakHintSpeech ?? "").includes("有名的词") &&
   pressReset.controlsHidden &&
   pressReset.hintHidden &&
   inkDuringListen === 0;

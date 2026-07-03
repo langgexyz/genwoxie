@@ -3,10 +3,13 @@ export interface UnderstandResult {
     context: string;
     auditId?: string;
 }
-export interface AuditCorrection {
+export type AuditSignal = {
+    kind: "correction";
     char: string;
     context: string;
-}
-export declare function pollAuditCorrection(auditId: string, signal: AbortSignal): Promise<AuditCorrection | null>;
+} | {
+    kind: "weak";
+};
+export declare function pollAuditSignal(auditId: string, signal: AbortSignal): Promise<AuditSignal | null>;
 export declare function probeUnderstandApi(timeoutMs?: number): Promise<boolean>;
-export declare function requestUnderstand(wav: Blob): Promise<UnderstandResult>;
+export declare function requestUnderstand(wav: Blob, prevAuditId?: string): Promise<UnderstandResult>;

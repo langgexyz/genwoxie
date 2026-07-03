@@ -36,8 +36,15 @@ if (!MOCK && (!API_KEY || !BASE_URL)) {
 
 // 复核结果表:auditId(=语料时间戳) -> 结论;前端轮询取,容量封顶防泄漏。
 type AuditEntry =
-  | { status: "pending" }
-  | { status: "done"; agree: boolean | null; char?: string; context?: string };
+  | { status: "pending"; transcript?: string }
+  | {
+      status: "done";
+      agree: boolean | null;
+      char?: string;
+      context?: string;
+      weak?: boolean;
+      transcript?: string;
+    };
 const audits = new Map<string, AuditEntry>();
 const AUDITS_MAX = 500;
 
@@ -88,10 +95,12 @@ function readBody(req: IncomingMessage): Promise<string> {
 async function handleUnderstand(req: IncomingMessage, res: ServerResponse): Promise<void> {
   let audio = "";
   let format = "wav";
+  let prev = "";
   try {
     const parsed = JSON.parse(await readBody(req)) as Record<string, unknown>;
     audio = typeof parsed["audio"] === "string" ? parsed["audio"] : "";
     format = typeof parsed["format"] === "string" ? parsed["format"] : "wav";
+    prev = typeof parsed["prev"] === "string" ? parsed["prev"] : "";
   } catch {
     sendJson(res, 400, { error: "请求体必须是 JSON,含 base64 的 audio 字段" });
     return;
@@ -108,14 +117,16 @@ async function handleUnderstand(req: IncomingMessage, res: ServerResponse): Prom
   try {
     // 同步链路只走两路(ASR+omni,约 2s);GPT 不进同步路径(实测经中转 3-9s,
     // user 拍板:两路同步 + GPT 异步复核)。
-    const outcome = await understandAudio(audio, format, { apiKey: API_KEY, baseUrl: BASE_URL });
+    // 追问模式:带 prev(上一轮 auditId)时取上一轮转写,两句合并消歧
+    const prior = prev ? (audits.get(prev)?.transcript ?? "") : "";
+    const outcome = await understandAudio(audio, format, { apiKey: API_KEY, baseUrl: BASE_URL }, prior);
     const auditor =
       ARBITER_URL && ARBITER_KEY && ARBITER_MODEL
         ? { baseUrl: ARBITER_URL, apiKey: ARBITER_KEY, model: ARBITER_MODEL }
         : undefined;
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     const willAudit = !!(CORPUS_DIR && auditor && outcome.transcript && outcome.result.char);
-    if (willAudit) setAudit(stamp, { status: "pending" });
+    if (willAudit) setAudit(stamp, { status: "pending", transcript: outcome.transcript });
     sendJson(res, 200, willAudit ? { ...outcome.result, auditId: stamp } : outcome.result);
     if (CORPUS_DIR) void saveCorpusAndAudit(stamp, audio, format, outcome, auditor);
   } catch (e) {
@@ -142,15 +153,16 @@ async function saveCorpusAndAudit(
       const verdict = await arbitrate(outcome.transcript, outcome.result, auditor);
       audit = verdict
         ? verdict.char === outcome.result.char
-          ? { mode: "async", agree: true }
+          ? { mode: "async", agree: true, evidence: verdict.evidence }
           : { mode: "async", agree: false, suspect: true, gpt: verdict }
         : { mode: "async", agree: null };
-      // 结论进内存表,前端轮询到后播报提示并切字
+      // 结论进内存表,前端轮询到后播报提示并切字;同意但证据弱(人名类同音字,
+      // 模型不可判)也回传,前端语音引导换说法
       setAudit(
         stamp,
         verdict
           ? verdict.char === outcome.result.char
-            ? { status: "done", agree: true }
+            ? { status: "done", agree: true, weak: verdict.evidence === "weak" }
             : { status: "done", agree: false, char: verdict.char, context: verdict.context }
           : { status: "done", agree: null },
       );

@@ -1,9 +1,9 @@
 // 理解服务客户端:wav 录音 -> POST api/understand -> {char, context}。
 // API 路径用相对形式:根路径与反代子路径(如 ccdirect.dev/xie/)部署都成立。
 // 服务端(dev server / FC 函数)持有模型 key,前端只见业务 JSON。
-// 轮询后台复核:发现纠错(agree=false 且给了新字)返回之,同意/超时/出错返回 null。
+// 轮询后台复核:同意且证据强/超时/出错返回 null(无事发生)。
 // 孩子无感等待,不占同步链路延迟。
-export async function pollAuditCorrection(auditId, signal) {
+export async function pollAuditSignal(auditId, signal) {
     for (let i = 0; i < 15; i++) {
         await new Promise((r) => setTimeout(r, 2000));
         if (signal.aborted)
@@ -17,10 +17,13 @@ export async function pollAuditCorrection(auditId, signal) {
                 continue;
             if (data["agree"] === false && typeof data["char"] === "string" && data["char"]) {
                 return {
+                    kind: "correction",
                     char: data["char"],
                     context: typeof data["context"] === "string" ? data["context"] : "",
                 };
             }
+            if (data["agree"] === true && data["weak"] === true)
+                return { kind: "weak" };
             return null;
         }
         catch {
@@ -42,11 +45,15 @@ export async function probeUnderstandApi(timeoutMs = 1500) {
         return false;
     }
 }
-export async function requestUnderstand(wav) {
+export async function requestUnderstand(wav, prevAuditId = "") {
     const res = await fetch("api/understand", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audio: await blobToBase64(wav), format: "wav" }),
+        body: JSON.stringify({
+            audio: await blobToBase64(wav),
+            format: "wav",
+            ...(prevAuditId ? { prev: prevAuditId } : {}),
+        }),
         signal: AbortSignal.timeout(20000),
     });
     if (!res.ok)
