@@ -77,9 +77,16 @@ button:disabled {
   border: 1px solid transparent;
 }
 
-#writingBoard {
+.board-wrap {
+  position: relative;
   width: min(64vh, 86vw, 640px);
   aspect-ratio: 1;
+}
+
+#writingBoard {
+  display: block;
+  width: 100%;
+  height: 100%;
   overflow: visible;
   user-select: none;
 }
@@ -102,24 +109,59 @@ button:disabled {
   stroke-width: 1.8;
 }
 
-/* 墨迹画布:盖在田字格 SVG 上,与之同尺寸同位置,毛笔笔画画在这里 */
-.ink-canvas {
+/* 空态引导:格子中央,浅色;有字后 hidden */
+.board-hint {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: min(64vh, 86vw, 640px);
-  aspect-ratio: 1;
+  margin: 0;
   transform: translate(-50%, -50%);
+  font-size: clamp(18px, 4.6vw, 26px);
+  line-height: 2;
+  text-align: center;
+  white-space: nowrap;
+  color: #b9a77f;
+  pointer-events: none;
+  user-select: none;
+}
+
+.board-hint[hidden] {
+  display: none;
+}
+
+/* 墨迹画布:盖在田字格 SVG 上,同锚 board-wrap 保证与格子像素对齐 */
+.ink-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
 }
 
 .board-controls {
   position: absolute;
-  bottom: 18px;
+  bottom: 10px;
   left: 50%;
   display: flex;
-  gap: 18px;
+  gap: 26px;
   transform: translateX(-50%);
+}
+
+.board-controls[hidden] {
+  display: none;
+}
+
+.control-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.control-caption {
+  font-size: 13px;
+  color: var(--muted);
+  user-select: none;
 }
 
 .round-button {
@@ -316,11 +358,7 @@ button:disabled {
     padding: 14px 0 96px;
   }
 
-  #writingBoard {
-    width: min(92vw, 560px);
-  }
-
-  .ink-canvas {
+  .board-wrap {
     width: min(92vw, 560px);
   }
 
