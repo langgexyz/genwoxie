@@ -20,7 +20,6 @@ export function recordingSupported() {
     return !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined";
 }
 export class HoldRecorder {
-    stream = null;
     // 会话序号:每次按下自增,贯穿整个异步生命周期——慢启动(授权/高负载可达秒级)
     // 期间用户再次按下时,旧会话在每个 await 后都会发现自己已过期并自我作废,
     // 否则旧录音器被误当成新一轮的(实测:两轮全部静默流产)。
@@ -53,18 +52,25 @@ export class HoldRecorder {
         }
     }
     async doStart(mySession) {
-        this.stream ??= await navigator.mediaDevices.getUserMedia({ audio: true });
-        if (mySession !== this.session)
-            return; // 慢启动期间已换轮,不再开录
+        // 每轮现拿现还,不长期持流:iOS 单音频会话下 TTS 一播放会把持着的旧
+        // 麦克风轨道弄死,复用死流 MediaRecorder 抛错,"在听"隔次失灵;持流
+        // 期间系统还一直显示"正在使用麦克风"。授权在页面会话内持续,重拿不
+        // 再弹窗,代价只是每轮一次设备打开(已有"准备…"过渡态兜住)。
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (mySession !== this.session) {
+            for (const t of stream.getTracks())
+                t.stop(); // 已换轮:借了就还
+            return;
+        }
         const chunks = []; // 按会话闭包隔离,不与旧会话共享
         const mimeType = pickMimeType();
-        const recorder = new MediaRecorder(this.stream, mimeType ? { mimeType } : undefined);
+        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
         recorder.addEventListener("dataavailable", (e) => {
             if (e.data.size > 0)
                 chunks.push(e.data);
         });
         recorder.start();
-        this.active = { recorder, chunks };
+        this.active = { recorder, chunks, stream };
     }
     // 松手:停录并归一成 wav。换轮/太短/没录上返回 null。
     async stop() {
@@ -87,6 +93,8 @@ export class HoldRecorder {
             active.recorder.addEventListener("stop", () => resolve(), { once: true });
             active.recorder.stop();
         });
+        for (const t of active.stream.getTracks())
+            t.stop(); // 用完即还麦克风
         const raw = new Blob(active.chunks, { type: active.recorder.mimeType });
         if (raw.size === 0)
             return null;
@@ -101,6 +109,8 @@ export class HoldRecorder {
         catch {
             // 已经停了就算了
         }
+        for (const t of this.active.stream.getTracks())
+            t.stop(); // 弃轮也要还麦克风
         this.active = null;
     }
     async toWav(raw) {
