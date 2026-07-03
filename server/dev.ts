@@ -12,7 +12,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, join, normalize, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { understandAudio, type UnderstandOutcome } from "./understand.ts";
+import { arbitrate, understandAudio, type UnderstandOutcome } from "./understand.ts";
 
 const PORT = Number(process.env["PORT"] ?? 8731);
 const MOCK = process.env["MOCK_UNDERSTAND"] === "1";
@@ -90,34 +90,43 @@ async function handleUnderstand(req: IncomingMessage, res: ServerResponse): Prom
     return;
   }
   try {
-    const arbiter =
+    // 同步链路只走两路(ASR+omni,约 2s);GPT 不进同步路径(实测经中转 3-9s,
+    // user 拍板:两路同步 + GPT 异步复核)。
+    const outcome = await understandAudio(audio, format, { apiKey: API_KEY, baseUrl: BASE_URL });
+    sendJson(res, 200, outcome.result);
+    const auditor =
       ARBITER_URL && ARBITER_KEY && ARBITER_MODEL
         ? { baseUrl: ARBITER_URL, apiKey: ARBITER_KEY, model: ARBITER_MODEL }
         : undefined;
-    const outcome = await understandAudio(audio, format, {
-      apiKey: API_KEY,
-      baseUrl: BASE_URL,
-      arbiter,
-    });
-    sendJson(res, 200, outcome.result);
-    if (CORPUS_DIR) void saveCorpus(audio, format, outcome);
+    if (CORPUS_DIR) void saveCorpusAndAudit(audio, format, outcome, auditor);
   } catch (e) {
     console.error("error: understand 调用失败:", e instanceof Error ? e.message : e);
     sendJson(res, 502, { error: "模型服务暂时不可用" });
   }
 }
 
-// 语料落盘:同名 wav+json 一对,记录三路证据(转写/最终结果/是否经裁判);
-// expected 初值取最终输出,人工纠错改 json。
-async function saveCorpus(
+// 语料落盘 + GPT 异步复核:已回给用户后 GPT 后台审每一条("两路同错"从沉默
+// 错误变成语料里 suspect=true 的待审数据,GPT 100% 参与但零交互延迟)。
+async function saveCorpusAndAudit(
   audioB64: string,
   format: string,
   outcome: UnderstandOutcome,
+  auditor?: { baseUrl: string; apiKey: string; model: string },
 ): Promise<void> {
   try {
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     await mkdir(CORPUS_DIR, { recursive: true });
     await writeFile(join(CORPUS_DIR, `${stamp}.${format}`), Buffer.from(audioB64, "base64"));
+
+    let audit: Record<string, unknown> = { mode: "off" };
+    if (auditor && outcome.transcript && outcome.result.char) {
+      const verdict = await arbitrate(outcome.transcript, outcome.result, auditor);
+      audit = verdict
+        ? verdict.char === outcome.result.char
+          ? { mode: "async", agree: true }
+          : { mode: "async", agree: false, suspect: true, gpt: verdict }
+        : { mode: "async", agree: null };
+    }
     await writeFile(
       join(CORPUS_DIR, `${stamp}.json`),
       JSON.stringify(
@@ -125,7 +134,7 @@ async function saveCorpus(
           expected: outcome.result.char,
           model: outcome.result,
           transcript: outcome.transcript,
-          judged: outcome.arbitrated,
+          audit,
           format,
           savedAt: stamp,
         },
@@ -133,8 +142,13 @@ async function saveCorpus(
         2,
       ),
     );
+    if (audit["suspect"]) {
+      console.error(
+        `warning: GPT 复核分歧 ${stamp}: 已返回 ${outcome.result.char}, GPT 判 ${JSON.stringify(audit["gpt"])}`,
+      );
+    }
   } catch (e) {
-    console.error("warning: 语料落盘失败(不影响主流程):", e instanceof Error ? e.message : e);
+    console.error("warning: 语料落盘/复核失败(不影响主流程):", e instanceof Error ? e.message : e);
   }
 }
 
