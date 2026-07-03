@@ -29,11 +29,15 @@ page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 await page.goto(`${BASE_URL}/index.html`, { waitUntil: "networkidle" });
 await page.screenshot({ path: `${out}/01-initial.png` });
 
-// 空态契约:引导语可见,次级控件(再看/再听)不出现——首屏唯一动作是按住说话
-const emptyState = await page.evaluate(() => ({
-  hintVisible: !document.querySelector<HTMLElement>("#boardHint")?.hidden,
-  controlsHidden: document.querySelector<HTMLElement>("#boardControls")?.hidden === true,
-}));
+// 首屏自我介绍契约:不做任何操作,毛笔自动开写「城」(按钮例句的答案);
+// 格内无文字说明(孩子不识字,教学靠演示+例句,不靠废话)
+const firstEntry = {
+  autoDemoStarted: await page
+    .waitForSelector("#playPauseBtn.is-pause", { timeout: 20000 })
+    .then(() => true)
+    .catch(() => false),
+  hintGone: await page.evaluate(() => document.querySelector("#boardHint") === null),
+};
 
 await page.evaluate(() => window.loadCharacter("城"));
 
@@ -62,9 +66,8 @@ await page.waitForFunction(
 );
 await page.screenshot({ path: `${out}/02-animating.png` });
 
-// 出字态契约:引导语退场,带文字标签的次级控件出现
+// 出字态契约:带文字标签的次级控件出现
 const loadedState = await page.evaluate(() => ({
-  hintHidden: document.querySelector<HTMLElement>("#boardHint")?.hidden === true,
   controlsVisible: document.querySelector<HTMLElement>("#boardControls")?.hidden === false,
   captions: [...document.querySelectorAll(".control-caption")].map((el) => el.textContent),
 }));
@@ -120,7 +123,7 @@ const micDisabled = await page.evaluate(
 );
 
 console.log(
-  JSON.stringify({ errors, ink, title, pausedShowsPlay, micDisabled, emptyState, loadedState, speakingShown, speakingCleared }, null, 2),
+  JSON.stringify({ errors, ink, title, pausedShowsPlay, micDisabled, firstEntry, loadedState, speakingShown, speakingCleared }, null, 2),
 );
 
 const ok =
@@ -130,9 +133,8 @@ const ok =
   ink > 0.03 &&
   title.includes("城") &&
   pausedShowsPlay &&
-  emptyState.hintVisible &&
-  emptyState.controlsHidden &&
-  loadedState.hintHidden &&
+  firstEntry.autoDemoStarted &&
+  firstEntry.hintGone &&
   loadedState.controlsVisible &&
   loadedState.captions.join(",") === "再写一遍,再读一遍";
 await browser.close();
