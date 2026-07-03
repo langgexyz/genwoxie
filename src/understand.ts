@@ -8,17 +8,18 @@ export interface UnderstandResult {
   auditId?: string; // 服务端后台复核的单号,拿它轮询纠错结果
 }
 
-export interface AuditCorrection {
-  char: string;
-  context: string;
-}
+// 复核信号:correction=GPT 给出纠正字(切字重写);weak=同意但证据弱
+// (人名类同音字,模型不可判,语音引导用户换个有判别力的说法)。
+export type AuditSignal =
+  | { kind: "correction"; char: string; context: string }
+  | { kind: "weak" };
 
-// 轮询后台复核:发现纠错(agree=false 且给了新字)返回之,同意/超时/出错返回 null。
+// 轮询后台复核:同意且证据强/超时/出错返回 null(无事发生)。
 // 孩子无感等待,不占同步链路延迟。
-export async function pollAuditCorrection(
+export async function pollAuditSignal(
   auditId: string,
   signal: AbortSignal,
-): Promise<AuditCorrection | null> {
+): Promise<AuditSignal | null> {
   for (let i = 0; i < 15; i++) {
     await new Promise((r) => setTimeout(r, 2000));
     if (signal.aborted) return null;
@@ -29,10 +30,12 @@ export async function pollAuditCorrection(
       if (data["status"] === "pending") continue;
       if (data["agree"] === false && typeof data["char"] === "string" && data["char"]) {
         return {
+          kind: "correction",
           char: data["char"],
           context: typeof data["context"] === "string" ? data["context"] : "",
         };
       }
+      if (data["agree"] === true && data["weak"] === true) return { kind: "weak" };
       return null;
     } catch {
       return null;
@@ -53,11 +56,15 @@ export async function probeUnderstandApi(timeoutMs = 1500): Promise<boolean> {
   }
 }
 
-export async function requestUnderstand(wav: Blob): Promise<UnderstandResult> {
+export async function requestUnderstand(wav: Blob, prevAuditId = ""): Promise<UnderstandResult> {
   const res = await fetch("api/understand", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ audio: await blobToBase64(wav), format: "wav" }),
+    body: JSON.stringify({
+      audio: await blobToBase64(wav),
+      format: "wav",
+      ...(prevAuditId ? { prev: prevAuditId } : {}),
+    }),
     signal: AbortSignal.timeout(20000),
   });
   if (!res.ok) throw new Error(`understand HTTP ${res.status}`);
