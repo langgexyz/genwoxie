@@ -32,6 +32,13 @@ page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 
 await page.goto(`${BASE_URL}/index.html`, { waitUntil: "networkidle" });
 
+// 首屏自动演示先起播,清掉它的播报痕迹,避免与场景一的回声断言串台
+// (自动演示与语音查询的目标字/播报文本相同,不清则分不清来源)
+await page.waitForSelector("#playPauseBtn.is-pause", { timeout: 20000 });
+await page.evaluate(() => {
+  window.lastSpeech = "";
+});
+
 // 正向:按住 1s 说话(假设备出测试音),松手 -> mock 返回 城/小城夏天 -> 演示起播
 const mic = page.locator("#micBtn");
 await mic.dispatchEvent("pointerdown");
@@ -64,7 +71,6 @@ await page.waitForSelector("#micBtn[data-recording]", { timeout: 10000 });
 // 幂等:上一轮写了城,这次按下即全新开始——写字区已清空、次级控件收起
 const pressReset = await page.evaluate(() => ({
   controlsHidden: document.querySelector<HTMLElement>("#boardControls")?.hidden === true,
-  hintHidden: document.querySelector<HTMLElement>("#boardHint")?.hidden === true,
 }));
 const inkDuringListen = await inkRatio(page);
 await page.waitForTimeout(700);
@@ -188,7 +194,6 @@ const ok =
   correctionSpeech === "听错啦，是城，小城夏天的城" &&
   (weakHintSpeech ?? "").includes("有名的词") &&
   pressReset.controlsHidden &&
-  pressReset.hintHidden &&
   inkDuringListen === 0 &&
   driftKeptListening &&
   releasedOutsideStops;

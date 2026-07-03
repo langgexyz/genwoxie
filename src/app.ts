@@ -75,7 +75,6 @@ function mustQuery<T extends Element>(root: ParentNode, selector: string): T {
 }
 
 const canvas = mustQuery<HTMLCanvasElement>(document, "#inkCanvas");
-const boardHint = mustQuery<HTMLParagraphElement>(document, "#boardHint");
 const thinkingInk = mustQuery<HTMLDivElement>(document, "#thinkingInk");
 const boardControls = mustQuery<HTMLDivElement>(document, "#boardControls");
 const playPauseBtn = mustQuery<HTMLButtonElement>(document, "#playPauseBtn");
@@ -365,22 +364,26 @@ function resetToIdle(): void {
   clearBoard();
   demoState = "idle";
   setPlayGlyph("play");
-  // 回到空态:唯一动作重新变成"按住说话",次级控件收起、引导语回来。
+  // 回到空态:唯一动作重新变成"按住说话",次级控件收起、呼吸召唤回来。
   // 这里是"世界归零"时刻(按下清场/失败复位),与画布瞬时清空同步,硬切
   // 才干脆;渐隐只用于温和的状态流(墨点/控件出现)。
+  worldEpoch++;
   for (const a of boardControls.getAnimations()) a.cancel();
   boardControls.hidden = true;
   showIdleGuidance();
 }
 
-// 空态引导(提示语+麦克风呼吸脉动)统一开关,避免两者状态漂移
+// 世界纪元:按下清场/失败复位时 +1。跨 await 的加载(首屏自动演示/纠错重写)
+// 完成时对不上纪元即作废,防旧加载把字写进已被清零的画布。
+let worldEpoch = 0;
+
+// 空态引导=麦克风呼吸脉动(动效即"按我")。格内不放文字:孩子不识字读不了,
+// 家长看按钮例句就够——"会得到什么"由首屏自动演示教。
 function showIdleGuidance(): void {
-  revealEl(boardHint);
   micBtn.classList.add("is-beckoning");
 }
 
 function hideIdleGuidance(): void {
-  boardHint.hidden = true;
   micBtn.classList.remove("is-beckoning");
 }
 
@@ -390,14 +393,17 @@ function hideIdleGuidance(): void {
 async function loadCharacter(char: string, context = "", speechPrefix = ""): Promise<void> {
   if (!char) return;
 
+  const epoch = worldEpoch;
   let data: CharacterData | null;
   try {
     data = await loadCharacterData(char);
   } catch {
+    if (epoch !== worldEpoch) return; // 世界已被按下清零,连报错都不该发声
     resetToIdle();
     speakOnce("网络好像不太好，等一下再试吧。");
     return;
   }
+  if (epoch !== worldEpoch) return; // 加载期间用户按下了:本次加载作废
   if (!data || !data.strokes) {
     resetToIdle();
     speakOnce("这个字还没找到，换一个吧。");
@@ -503,8 +509,7 @@ function setupRecorderInput(): void {
 
   async function finishRecording(): Promise<void> {
     const myRound = round; // 本轮令牌:期间用户再按下则一切结果作废
-    // 在想:墨点起伏动画(空态引导先让位),孩子不识字,动效即"我在处理"
-    boardHint.hidden = true;
+    // 在想:墨滴晕开动画,孩子不识字,动效即"我在处理"
     revealEl(thinkingInk);
     try {
       const wav = await recorder.stop();
@@ -609,3 +614,8 @@ window.loadCharacter = loadCharacter;
 
 void setupVoiceInput();
 setupTestInput();
+
+// 首屏自我介绍:自动写出按钮例句的答案——「怎么问」(例句)与「会得到什么」
+// (演示)互为问答,孩子看动画即懂,零文字教学。手势前 TTS 被移动端浏览器
+// 静默是预期,「再读一遍」一点即有声。
+void loadCharacter("城", "小城夏天");

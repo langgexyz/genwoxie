@@ -109,26 +109,6 @@ button:disabled {
   stroke-width: 1.8;
 }
 
-/* 空态引导:格子中央,浅色;有字后 hidden */
-.board-hint {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  margin: 0;
-  transform: translate(-50%, -50%);
-  font-size: clamp(18px, 4.6vw, 26px);
-  line-height: 2;
-  text-align: center;
-  white-space: nowrap;
-  color: #b9a77f;
-  pointer-events: none;
-  user-select: none;
-}
-
-.board-hint[hidden] {
-  display: none;
-}
-
 /* 墨迹画布:盖在田字格 SVG 上,同锚 board-wrap 保证与格子像素对齐 */
 .ink-canvas {
   position: absolute;
