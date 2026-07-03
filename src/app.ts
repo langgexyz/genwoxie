@@ -76,7 +76,7 @@ function mustQuery<T extends Element>(root: ParentNode, selector: string): T {
 
 const canvas = mustQuery<HTMLCanvasElement>(document, "#inkCanvas");
 const boardHint = mustQuery<HTMLParagraphElement>(document, "#boardHint");
-const thinkingDots = mustQuery<HTMLDivElement>(document, "#thinkingDots");
+const thinkingInk = mustQuery<HTMLDivElement>(document, "#thinkingInk");
 const boardControls = mustQuery<HTMLDivElement>(document, "#boardControls");
 const playPauseBtn = mustQuery<HTMLButtonElement>(document, "#playPauseBtn");
 const speakBtn = mustQuery<HTMLButtonElement>(document, "#speakBtn");
@@ -448,7 +448,7 @@ function setupRecorderInput(): void {
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     resetToIdle();
     hideIdleGuidance(); // 录音中,不显示空态引导
-    thinkingDots.hidden = true;
+    thinkingInk.hidden = true;
     micBtn.classList.add("is-listening");
     // 拿麦克风是异步的(首次授权/高负载可达秒级),真开录前显示"准备…",
     // 就绪才切"在听…"——否则孩子提前开口丢字头。data-recording 同时是
@@ -505,7 +505,7 @@ function setupRecorderInput(): void {
     const myRound = round; // 本轮令牌:期间用户再按下则一切结果作废
     // 在想:墨点起伏动画(空态引导先让位),孩子不识字,动效即"我在处理"
     boardHint.hidden = true;
-    revealEl(thinkingDots);
+    revealEl(thinkingInk);
     try {
       const wav = await recorder.stop();
       if (myRound !== round) return; // 新一轮已开始,本轮作废
@@ -524,7 +524,7 @@ function setupRecorderInput(): void {
       if (myRound === round) speakOnce("网络好像不太好，等一下再试吧。");
     } finally {
       if (myRound === round) {
-        concealEl(thinkingDots);
+        concealEl(thinkingInk);
         // 没写出字(误触/没听清/网络错)则空态引导回来
         if (demoState === "idle") showIdleGuidance();
         micLabel.textContent = MIC_IDLE_LABEL;
