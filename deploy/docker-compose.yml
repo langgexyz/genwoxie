@@ -17,8 +17,10 @@ services:
     env_file: .env
     environment:
       PORT: "8731"
+      CORPUS_DIR: /data
     volumes:
       - ..:/app:ro
+      - /opt/genwoxie-data:/data # 语音语料(童声),不进公开 repo,pull-corpus.sh 拉回
     ports:
       - "127.0.0.1:8850:8731" # 只对本机 nginx 暴露
     mem_limit: 256m

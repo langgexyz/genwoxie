@@ -38,8 +38,28 @@ const emptyState = await page.evaluate(() => ({
 await page.evaluate(() => window.loadCharacter("城"));
 
 // 等动画真正开始(按钮进入暂停态),此刻截图看「演示中」+ 暂停双竖条
-await page.waitForSelector("#playPauseBtn.is-pause", { timeout: 8000 });
-await page.waitForTimeout(900);
+await page.waitForSelector("#playPauseBtn.is-pause", { timeout: 20000 });
+// 事件驱动等"第一段墨迹已落"再暂停:固定 sleep 在高负载下会被拉伸到睡过整场
+// 动画,点"暂停"变成点"重播",后续断言全歪(实测 flake 根因)。
+await page.waitForFunction(
+  () => {
+    const c = document.querySelector<HTMLCanvasElement>("#inkCanvas");
+    if (!c) return false;
+    const ictx = c.getContext("2d");
+    if (!ictx) return false;
+    const { data } = ictx.getImageData(0, 0, c.width, c.height);
+    let n = 0;
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] > 20) {
+        n++;
+        if (n > 500) return true;
+      }
+    }
+    return false;
+  },
+  undefined,
+  { timeout: 15000 },
+);
 await page.screenshot({ path: `${out}/02-animating.png` });
 
 // 出字态契约:引导语退场,带文字标签的次级控件出现
@@ -49,17 +69,23 @@ const loadedState = await page.evaluate(() => ({
   captions: [...document.querySelectorAll(".control-caption")].map((el) => el.textContent),
 }));
 
-// 点暂停:按钮应翻回播放三角(is-pause 移除)
+// 点暂停:按钮应翻回播放三角(is-pause 移除)——事件驱动等待,不用固定 sleep
 await page.click("#playPauseBtn");
-await page.waitForTimeout(300);
-const pausedShowsPlay = await page.evaluate(
-  () => !document.querySelector("#playPauseBtn")?.classList.contains("is-pause"),
-);
+let pausedShowsPlay = true;
+await page
+  .waitForFunction(
+    () => !document.querySelector("#playPauseBtn")?.classList.contains("is-pause"),
+    undefined,
+    { timeout: 5000 },
+  )
+  .catch(() => {
+    pausedShowsPlay = false;
+  });
 await page.screenshot({ path: `${out}/03-paused.png` });
 
 // 继续,轮询等演示彻底完成(onComplete 把按钮翻回播放三角)
 await page.click("#playPauseBtn");
-await page.waitForSelector("#playPauseBtn:not(.is-pause)", { timeout: 20000 });
+await page.waitForSelector("#playPauseBtn:not(.is-pause)", { timeout: 30000 });
 await page.waitForTimeout(500);
 await page.screenshot({ path: `${out}/04-done.png` });
 
