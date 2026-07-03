@@ -204,6 +204,39 @@ button:disabled {
   transform: translateX(1px);
 }
 
+/* 朗读中:喇叭声波弧线依次泛波+按钮轻脉动,告诉孩子"声音从这来/还在读" */
+#speakBtn.is-speaking {
+  animation: speak-pulse 1s ease-in-out infinite;
+}
+
+#speakBtn.is-speaking .spk-arc1 {
+  animation: spk-wave 1s ease-in-out infinite;
+}
+
+#speakBtn.is-speaking .spk-arc2 {
+  animation: spk-wave 1s ease-in-out 0.25s infinite;
+}
+
+@keyframes speak-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes spk-wave {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 /* 唯一输入:按住说话 */
 .mic-button {
   display: flex;
@@ -398,7 +431,10 @@ button:disabled {
 @media (prefers-reduced-motion: reduce) {
   .mic-button.is-beckoning,
   .wave-bars i,
-  .thinking-dots i {
+  .thinking-dots i,
+  #speakBtn.is-speaking,
+  #speakBtn.is-speaking .spk-arc1,
+  #speakBtn.is-speaking .spk-arc2 {
     animation: none;
   }
 }
