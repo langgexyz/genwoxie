@@ -27,13 +27,23 @@
           <div id="boardControls" class="board-controls" hidden>
             <div class="control-item">
               <button id="playPauseBtn" class="round-button" type="button" aria-label="再写一遍" title="再写一遍">
-                <span class="play-glyph" aria-hidden="true"></span>
+                <svg class="icon icon-play" viewBox="0 0 24 24" aria-hidden="true">
+                  <polygon points="7.5 4.5 19.5 12 7.5 19.5" fill="currentColor" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" />
+                </svg>
+                <svg class="icon icon-pause" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="5.6" y="4.5" width="4.6" height="15" rx="2" fill="currentColor" />
+                  <rect x="13.8" y="4.5" width="4.6" height="15" rx="2" fill="currentColor" />
+                </svg>
               </button>
               <span class="control-caption">再写一遍</span>
             </div>
             <div class="control-item">
               <button id="speakBtn" class="round-button" type="button" aria-label="再读一遍" title="再读一遍">
-                <span class="speak-glyph" aria-hidden="true"></span>
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M11.2 4.9 7 8.3H4.4c-.8 0-1.4.6-1.4 1.4v4.6c0 .8.6 1.4 1.4 1.4H7l4.2 3.4c.6.5 1.4 0 1.4-.7V5.6c0-.7-.9-1.2-1.4-.7Z" fill="currentColor" />
+                  <path d="M15.6 8.7a4.8 4.8 0 0 1 0 6.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                  <path d="M18.5 5.8a9 9 0 0 1 0 12.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                </svg>
               </button>
               <span class="control-caption">再读一遍</span>
             </div>
@@ -41,7 +51,11 @@
         </div>
 
         <button id="micBtn" class="mic-button" type="button" aria-label="按住说要写的字">
-          <span class="mic-glyph" aria-hidden="true"></span>
+          <svg class="icon mic-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="9" y="2.5" width="6" height="11.5" rx="3" fill="currentColor" />
+            <path d="M5.5 11v.8a6.5 6.5 0 0 0 13 0V11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+            <path d="M12 18.6v3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          </svg>
           <span class="mic-label">按住说要写的字</span>
         </button>
 
