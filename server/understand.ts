@@ -47,6 +47,29 @@ export const UNDERSTAND_PROMPT = [
   "只输出 JSON,不要任何其他文字。",
 ].join("\n");
 
+// 裁判结论:字+语境+证据强度。weak=凭音频无法确定同音字(语境是普通人名/
+// 无语境裸同音字,如 余泽熙/溪 错例),此类模型不可判,前端语音引导换说法。
+export interface ArbiterVerdict extends UnderstandResult {
+  evidence: "strong" | "weak";
+}
+
+export function parseArbiterVerdict(text: string): ArbiterVerdict | null {
+  const match = text.match(/\{[\s\S]*?\}/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[0]) as Record<string, unknown>;
+    const char = typeof parsed["char"] === "string" ? parsed["char"] : "";
+    if (!char) return null;
+    return {
+      char,
+      context: typeof parsed["context"] === "string" ? parsed["context"] : "",
+      evidence: parsed["evidence"] === "weak" ? "weak" : "strong",
+    };
+  } catch {
+    return null;
+  }
+}
+
 // GPT 裁判失败时的保守回退:两路一致才敢用 omni 结果;分歧时宁可返回空
 // (前端引导"再说一遍")也不猜——孩子无法自判错误,准确率优先(user 拍板)。
 export function fallbackWithoutJudge(transcript: string, omni: UnderstandResult): UnderstandResult {
@@ -60,7 +83,7 @@ export async function arbitrate(
   transcript: string,
   omniResult: UnderstandResult,
   cfg: ArbiterConfig,
-): Promise<UnderstandResult | null> {
+): Promise<ArbiterVerdict | null> {
   // 中转站首发常见瞬时 502(实测),重试一次
   for (let attempt = 0; attempt < 2; attempt++) {
     const verdict = await arbitrateOnce(transcript, omniResult, cfg);
@@ -74,14 +97,16 @@ async function arbitrateOnce(
   transcript: string,
   omniResult: UnderstandResult,
   cfg: ArbiterConfig,
-): Promise<UnderstandResult | null> {
+): Promise<ArbiterVerdict | null> {
   const prompt =
     "中文识字应用:孩子说了句话想让应用写某个汉字,两路独立识别结果如下,请你综合判定。\n" +
     `专职语音识别转写:"${transcript.replaceAll('"', "'")}"\n` +
     `音频多模态模型判定:${JSON.stringify(omniResult)}\n` +
     "两路一致通常可信;分歧时,转写更接近逐字发音,多模态直接听了音频但可能被噪音误导。" +
     "结合常用词/歌名等世界知识判断孩子最可能要写的字;孩子说的是多字词时取第一个字。" +
-    '只返回 JSON:{"char":"单字","context":"语境词,不含 的+目标字"}';
+    "另评估证据强度 evidence:语境是常见词/名人/名作等有判别力的=strong;" +
+    "语境本身是普通人名、或没有语境的裸同音字——即凭这段话无法确定是哪个同音字=weak。" +
+    '只返回 JSON:{"char":"单字","context":"语境词,不含 的+目标字","evidence":"strong 或 weak"}';
   try {
     const res = await fetch(`${cfg.baseUrl}/v1/responses`, {
       method: "POST",
@@ -96,8 +121,8 @@ async function arbitrateOnce(
     for (const item of data.output ?? []) {
       for (const c of item.content ?? []) {
         if (c.type === "output_text" && c.text) {
-          const parsed = extractJsonObject(c.text);
-          if (parsed.char) return parsed;
+          const verdict = parseArbiterVerdict(c.text);
+          if (verdict) return verdict;
         }
       }
     }
@@ -155,12 +180,13 @@ export async function understandAudio(
   audioB64: string,
   format: string,
   cfg: UnderstandConfig,
+  priorTranscript = "", // 追问模式:上一轮(同音字未定)的转写,两句合并消歧
 ): Promise<UnderstandOutcome> {
   // 默认两路混合(user 实测 28.7s 后拍板弃全同步三路):ASR 转写作参考喂给
   // omni 互相印证(eval 17/18,p50 1.7s,噪音例可修对)。配了 arbiter 才升级
   // 为三路全同步终审(代码保留,配置驱动)。
   const transcript = (await transcribe(audioB64, format, cfg).catch(() => "")).trim().slice(0, 100);
-  const omniResult = await omniListen(audioB64, format, cfg, transcript);
+  const omniResult = await omniListen(audioB64, format, cfg, transcript, priorTranscript);
 
   if (cfg.arbiter) {
     const verdict = await arbitrate(transcript, omniResult, cfg.arbiter);
@@ -175,10 +201,17 @@ async function omniListen(
   format: string,
   cfg: UnderstandConfig,
   transcript: string,
+  priorTranscript = "",
 ): Promise<UnderstandResult> {
-  const prompt = transcript
+  let prompt = transcript
     ? `${UNDERSTAND_PROMPT}\n专职语音识别对这段音频的参考转写(可能有错,与你自己听到的互相印证):"${transcript.replaceAll('"', "'")}"`
     : UNDERSTAND_PROMPT;
+  if (priorTranscript) {
+    prompt +=
+      `\n重要:上一句孩子问过"${priorTranscript.replaceAll('"', "'")}",那一轮的同音字没能确定。` +
+      "这一句很可能是补充描述(比如说了一个带那个字的词)——若是,把两句合并,确定他真正要写的字;" +
+      "若这句明显在问一个新的字,则按新问题处理。";
+  }
 
   const body = {
     model: cfg.model ?? DEFAULT_MODEL,

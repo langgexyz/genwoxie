@@ -10,7 +10,7 @@
 import { extractTargetCharacter, buildSpeechText } from "./extract.js";
 import { loadCharacterData, type CharacterData } from "./chardata.js";
 import { HoldRecorder, recordingSupported } from "./recorder.js";
-import { pollAuditCorrection, probeUnderstandApi, requestUnderstand } from "./understand.js";
+import { pollAuditSignal, probeUnderstandApi, requestUnderstand } from "./understand.js";
 
 const BOARD = 640;
 const PADDING = 50;
@@ -335,6 +335,7 @@ function setupRecorderInput(): void {
   let holding = false;
   let round = 0; // 轮次令牌:每次按下自增,迟到的上一轮结果按令牌作废
   let auditAbort: AbortController | null = null;
+  let followUpOf = ""; // 追问模式:上一轮(同音字未定)的 auditId,下一句合并消歧
 
   const startListening = (event: Event): void => {
     event.preventDefault();
@@ -380,17 +381,23 @@ function setupRecorderInput(): void {
     void finishRecording();
   };
 
-  // 后台复核纠错闭环:GPT 不同意已写的字时,动画+语音切到对的字
-  // (旧字淡出擦除 -> 播"听错啦,是X" -> 新字一笔一笔重写);
-  // 孩子已经在查下一个字则放弃打扰。
+  // 后台复核闭环:GPT 不同意 -> 动画+语音切到对的字(旧字淡出 -> "听错啦,是X"
+  // -> 重写);同意但证据弱(人名类同音字,模型不可判) -> 语音引导换个有判别力
+  // 的说法。孩子已经在查下一个字则都放弃打扰。
   function watchAuditCorrection(auditId: string, original: string): void {
     auditAbort?.abort();
     const ac = new AbortController();
     auditAbort = ac;
-    void pollAuditCorrection(auditId, ac.signal).then(async (fix) => {
-      if (!fix || ac.signal.aborted || currentChar !== original) return;
-      await fadeOutBoard();
-      void loadCharacter(fix.char, fix.context, "听错啦，是");
+    void pollAuditSignal(auditId, ac.signal).then(async (sig) => {
+      if (!sig || ac.signal.aborted || currentChar !== original) return;
+      if (sig.kind === "correction") {
+        await fadeOutBoard();
+        void loadCharacter(sig.char, sig.context, "听错啦，是");
+        return;
+      }
+      // 弱证据(一音多字,判不准):主动追问,下一句将与这一句合并消歧
+      followUpOf = auditId;
+      speakOnce("这个音有好几个字。再按住，告诉我一个用它的词，比如康熙皇帝的熙。");
     });
   }
 
@@ -403,7 +410,9 @@ function setupRecorderInput(): void {
       const wav = await recorder.stop();
       if (myRound !== round) return; // 新一轮已开始,本轮作废
       if (!wav) return; // 误触/太短,静默复位(finally 恢复空态引导)
-      const { char, context, auditId } = await requestUnderstand(wav);
+      const prev = followUpOf;
+      followUpOf = ""; // 一次性:无论成败,追问语境只用一轮
+      const { char, context, auditId } = await requestUnderstand(wav, prev);
       if (myRound !== round) return; // 结果迟到,丢弃,不打扰新一轮
       if (char) {
         await loadCharacter(char, context);
