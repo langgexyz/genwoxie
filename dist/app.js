@@ -269,6 +269,7 @@ function setPlayGlyph(mode) {
     playPauseBtn.setAttribute("aria-label", mode === "pause" ? "暂停笔顺" : "播放笔顺");
     playPauseBtn.title = mode === "pause" ? "暂停笔顺" : "播放笔顺";
 }
+let speakSeq = 0; // 朗读序号:cancel 旧读时其 end 回调迟到,凭序号不误清新状态
 function speakOnce(text) {
     if (!text)
         return;
@@ -279,6 +280,17 @@ function speakOnce(text) {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "zh-CN";
     utterance.rate = 0.9;
+    // 朗读中喇叭泛波动画:事件为主,守护定时器兜底(部分引擎/headless 不发事件)
+    const mySeq = ++speakSeq;
+    speakBtn.classList.add("is-speaking");
+    const stop = () => {
+        if (mySeq !== speakSeq)
+            return;
+        speakBtn.classList.remove("is-speaking");
+    };
+    window.setTimeout(stop, Math.min(20000, 1500 + text.length * 350));
+    utterance.addEventListener("end", stop);
+    utterance.addEventListener("error", stop);
     window.speechSynthesis.speak(utterance);
 }
 // 纠错切字的视觉过渡:旧字淡出 -> 清板 -> (调用方起笔写新字)。

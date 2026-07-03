@@ -92,17 +92,41 @@ await page.screenshot({ path: `${out}/04-done.png` });
 // 演示完:毛笔墨迹画在 canvas 上(非 SVG)。数 canvas 上不透明像素,
 // 确认整字真被墨铺出来(>3% 像素有墨即认为写出了字);再靠人/多模态看 04 截图确认形状。
 const ink = await inkRatio(page);
+
+// 朗读态契约:点"再读一遍"喇叭进入 is-speaking(泛波动画),读完(或守护定时器)退场。
+// headless 无声,凭 class 生命周期断言;动画观感靠截图自审。
+await page.click("#speakBtn");
+const speakingShown = await page
+  .waitForFunction(
+    () => document.querySelector("#speakBtn")?.classList.contains("is-speaking"),
+    undefined,
+    { timeout: 3000 },
+  )
+  .then(() => true)
+  .catch(() => false);
+await page.screenshot({ path: `${out}/05-speaking.png` });
+const speakingCleared = await page
+  .waitForFunction(
+    () => !document.querySelector("#speakBtn")?.classList.contains("is-speaking"),
+    undefined,
+    { timeout: 25000 },
+  )
+  .then(() => true)
+  .catch(() => false);
+
 const title = await page.title();
 const micDisabled = await page.evaluate(
   () => document.querySelector<HTMLButtonElement>("#micBtn")?.disabled,
 );
 
 console.log(
-  JSON.stringify({ errors, ink, title, pausedShowsPlay, micDisabled, emptyState, loadedState }, null, 2),
+  JSON.stringify({ errors, ink, title, pausedShowsPlay, micDisabled, emptyState, loadedState, speakingShown, speakingCleared }, null, 2),
 );
 
 const ok =
   errors.length === 0 &&
+  speakingShown &&
+  speakingCleared &&
   ink > 0.03 &&
   title.includes("城") &&
   pausedShowsPlay &&
